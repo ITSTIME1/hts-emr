@@ -36,7 +36,7 @@ docs/
 │
 ├── modules/                      # [2단계] 모듈 설계: 도메인을 수용한 모듈 경계
 │   ├── README.md                 # 모듈 간 의존성 그래프 및 이벤트 흐름
-│   └── <module>.md               # 모듈 상세 (master, order, billing, payment, reconciliation)
+│   └── <module>.md               # 모듈 상세 (master, reception, order, billing, payment, reconciliation)
 │
 └── adr/                          # [3단계] 열린 결정: 실험 기반 아키텍처 결정 기록
     └── NNNN-<kebab-case>.md      # 예: 0001-master-reference-strategy.md

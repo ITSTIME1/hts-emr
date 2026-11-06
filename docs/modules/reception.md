@@ -1,0 +1,33 @@
+# reception
+
+상태: 초안 · 갱신: 2026-11-06
+
+## 1. 책임 (Responsibility)
+- 접수로 내원 건을 만든다(F-01).
+- 접수 때 외부 기관에 자격을 조회해 내원 건의 자격 기록으로 남긴다(A-03, A-04). 외부 기관은 모의로 둔다.
+- 자격 소급 변경을 확인해 새 자격 기록을 추가하고, 그 사실을 알린다(F-04.d, A-17).
+
+## 2. 소유 대상 (Ownership)
+- [내원 건](../domain/02-glossary.md#내원-건) `Visit`, [진료일](../domain/02-glossary.md#진료일) `VisitDate`
+- [자격](../domain/02-glossary.md#자격) `Eligibility`(내원 건의 자격 기록), [본인부담률](../domain/02-glossary.md#본인부담률)
+- [자격 소급 변경](../domain/02-glossary.md#자격-소급-변경) `RetroactiveEligibilityChange`
+
+## 3. 공개 계약 (Public Contract)
+
+| 종류 | 이름 | 입력 | 결과 | 보장 수준 |
+| :--- | :--- | :--- | :--- | :--- |
+| 조회 | `Visits.get` | 내원 건 | 환자, 진료과, 진료 의사, 진료일 | 조회 시점의 값 |
+| 조회 | `Eligibilities.current` | 내원 건 | 가장 나중의 자격 기록 | 기존 기록은 고치지 않으므로, 이전에 받은 결과는 그때의 기록으로 남아 있다(A-03) |
+| 이벤트 | `EligibilityRetroactivelyChanged` | 내원 건, 이전 자격, 새 자격 | — | 새 자격 기록이 확정된 뒤에만 발행되고 유실되지 않는다. 받는 쪽: `payment` |
+
+## 4. 모듈 의존성 (Dependencies)
+- 없음
+
+## 5. 명시적 비책임 (Non-Goals)
+- 접수 때 알리는 미수납·환불 대기의 내용. 접수 화면이 `payment`의 공개 조회를 함께 사용한다. `reception`이 `payment`를 부르면 순환한다.
+- 자격 변경에 따른 재산정과 환불(`payment`, `billing`)
+- 예약(범위 밖)
+
+## 6. 관련 규칙
+- 흐름: F-01, F-04.d
+- 가정: A-03, A-04, A-15, A-17
