@@ -1,3 +1,11 @@
 spring:
   application:
     name: hts-emr
+  jpa:
+    # 요청 처리 중 지연 로딩이 화면 계층까지 새어 나가지 않게 한다
+    open-in-view: false
+    hibernate:
+      # 스키마는 Flyway가 만든다. Hibernate는 엔티티와 스키마가 맞는지만 확인한다
+      ddl-auto: validate
+  flyway:
+    locations: classpath:db/migration
