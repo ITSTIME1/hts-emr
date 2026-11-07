@@ -25,6 +25,16 @@
 
 개발을 시작하면서 `common`을 추가했습니다. 금액(`Money`)처럼 여러 모듈이 함께 쓰는 값 타입을 둡니다. 업무 규칙이 있는 것은 두지 않습니다([common.md](common.md)).
 
+**공개 기능의 이름 규칙**
+
+| 성격 | 이름 | 예 |
+| :--- | :--- | :--- |
+| 조회만 한다 | `XxxQueryService` | `FeeQueryService`, `PaymentQueryService` |
+| 상태를 바꾸거나 계산한다 | `XxxService` | `BillingService`, `PaymentService` |
+
+- 이름만 보고 그 호출이 무엇을 바꾸는지 알 수 있게 하려는 규칙입니다. 조회와 변경이 함께 공개되는 모듈(`payment`)은 둘로 나눕니다.
+- 공개 기능은 엔티티가 아니라 공개 패키지에 있는 값 객체(`FeeItemView` 등)를 주고받습니다.
+
 ## 2. 의존 방향
 
 ```mermaid
