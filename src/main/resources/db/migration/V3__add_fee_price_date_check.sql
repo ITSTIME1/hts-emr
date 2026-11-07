@@ -1,0 +1,1 @@
+alter table fee_price add constraint ck_fee_price_date_only check(effective_from = TRUNC(effective_from));
