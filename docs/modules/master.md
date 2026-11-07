@@ -20,7 +20,7 @@
 | 조회 | `FeeQueryService.feeItem` | 수가 항목 | 급여 구분, 선시행 기본값 | 조회 시점의 값 |
 | 조회 | `FeeQueryService.hasPriceOn` | 수가 항목, 진료일 | 그 진료일에 유효한 수가가 있는지 | 조회 시점의 값. `order`가 오더를 낼 때 쓴다(T-ORD-01). |
 | 조회 | `FeeQueryService.priceOn` | 수가 항목, 진료일 | 그 진료일에 유효한 수가(`Money`). 없으면 예외 | 새 단가가 생겨도 이전 진료일의 결과는 바뀌지 않는다. 산정 내역이 이 값을 어떻게 가리킬지는 미정(ADR-0001) |
-| 조회 | `CounterQueryService.get` | 창구 | 창구 정보 | 조회 시점의 값 |
+| 조회 | `CounterQueryService.counter` | 창구 | 창구 정보 | 조회 시점의 값 |
 
 - 발행하는 이벤트: 없음
 - 공개 조회는 엔티티가 아니라 값 객체(`FeeItemView` 등)를 돌려준다. 엔티티는 `internal`에 둔다. 금액은 `common`의 `Money`다.
