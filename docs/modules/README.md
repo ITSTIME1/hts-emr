@@ -11,6 +11,7 @@
 
 | 모듈 | 책임 | 소유 대상 | 문서 |
 | :--- | :--- | :--- | :--- |
+| `common` | 여러 모듈이 함께 쓰는 값 타입 | 금액 `Money` | [common.md](common.md) |
 | `master` | 기준 정보 | 수가 항목, 수가, 창구 | [master.md](master.md) |
 | `reception` | 접수와 내원 건의 자격 | 내원 건, 자격 기록, 자격 소급 변경 | [reception.md](reception.md) |
 | `order` | 오더 항목의 생명주기와 시행 | 오더 항목, 시행 기록, 오더 취소·취소 요청·소멸, 원외처방 | [order.md](order.md) |
@@ -21,6 +22,18 @@
 처음 계획(master, order, billing, payment, reconciliation)에서 두 가지를 바꿨습니다.
 - 자격은 "환자의 지금 자격"이 아니라 "그 내원 건에 대해 남긴 기록"이므로 기준 정보가 아닙니다. 내원 건과 함께 `reception`으로 옮겼습니다.
 - 창구는 수납 건과 마감이 함께 가리키는 기준 정보이므로 `master`에 둡니다.
+
+개발을 시작하면서 `common`을 추가했습니다. 금액(`Money`)처럼 여러 모듈이 함께 쓰는 값 타입을 둡니다. 업무 규칙이 있는 것은 두지 않습니다([common.md](common.md)).
+
+**공개 기능의 이름 규칙**
+
+| 성격 | 이름 | 예 |
+| :--- | :--- | :--- |
+| 조회만 한다 | `XxxQueryService` | `FeeQueryService`, `PaymentQueryService` |
+| 상태를 바꾸거나 계산한다 | `XxxService` | `BillingService`, `PaymentService` |
+
+- 이름만 보고 그 호출이 무엇을 바꾸는지 알 수 있게 하려는 규칙입니다. 조회와 변경이 함께 공개되는 모듈(`payment`)은 둘로 나눕니다.
+- 공개 기능은 엔티티가 아니라 공개 패키지에 있는 값 객체(`FeeItemView` 등)를 주고받습니다.
 
 ## 2. 의존 방향
 
@@ -41,6 +54,7 @@ flowchart LR
 ```
 
 - 실선은 코드 의존(직접 호출, 또는 상대 모듈이 발행한 이벤트를 받음)입니다. 화살표 방향이 "의존하는 쪽 → 의존받는 쪽"입니다.
+- `common`은 어느 모듈이든 의존할 수 있고 `common`은 아무것도 의존하지 않으므로, 그림에서 생략했습니다.
 - 점선은 payment의 사실을 order가 알아야 하는 방향입니다. order는 payment에 코드 의존을 가질 수 없으므로(순환), 방식은 미정(ADR-0002)입니다.
 
 **이렇게 정한 이유**

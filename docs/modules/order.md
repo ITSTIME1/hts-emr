@@ -17,8 +17,8 @@
 
 | 종류 | 이름 | 입력 | 결과 | 보장 수준 |
 | :--- | :--- | :--- | :--- | :--- |
-| 조회 | `OrderItems.ofVisit` | 내원 건 | 오더 항목과 상태 | 조회 시점의 상태. `payment`가 산정 대상을 고를 때 쓴다. |
-| 조회 | `OrderItems.effectiveness` | 오더 항목들 | 항목별 상태 | 조회 시점의 상태. `payment`가 수납 완료 직전에 쓴다(T-PAY-03). 완료 판단과 어떻게 묶일지는 미정(ADR-0003) |
+| 조회 | `OrderItemQueryService.ofVisit` | 내원 건 | 오더 항목과 상태 | 조회 시점의 상태. `payment`가 산정 대상을 고를 때 쓴다. |
+| 조회 | `OrderItemQueryService.effectiveness` | 오더 항목들 | 항목별 상태 | 조회 시점의 상태. `payment`가 수납 완료 직전에 쓴다(T-PAY-03). 완료 판단과 어떻게 묶일지는 미정(ADR-0003) |
 | 이벤트 | `OrderItemCancellationRequested` | 오더 항목, 요청자(의사, 시스템), 사유 | — | 취소 요청이 확정된 뒤 발행, 유실되지 않음. 받는 쪽: `payment`(T-RFD-01) |
 | 이벤트 | `OrderItemCancelled`, `OrderItemExpired` | 오더 항목 | — | 상태가 확정된 뒤 발행. 받는 쪽: `payment`(진행 중 수납 거부, F-04.c) |
 | 받는 사실 | 수납 완료, 환불 완료 | 오더 항목들 | — | `payment`에서 받는다. `order`는 `payment`에 코드 의존을 갖지 않는다. 방식은 미정(ADR-0002) |

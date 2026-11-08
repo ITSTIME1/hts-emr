@@ -20,12 +20,12 @@
 
 | 종류 | 이름 | 입력 | 결과 | 보장 수준 |
 | :--- | :--- | :--- | :--- | :--- |
-| 조회 | `Payments.outstandingOf` | 환자 | 미수납, 환불 대기 | 조회 시점의 값. 접수 화면이 쓴다(F-01). |
-| 조회 | `Payments.closable` | 창구, 마감 시점 | 완료되었고 마감 소속이 없는 수납 건과 끝난 환불 몫 | 조회 시점의 값. `reconciliation`이 쓴다(A-13, A-26). |
-| 조회 | `PaymentLines.ofCounter` | 창구, 기간 | 카드 결제와 승인·취소 상태 | `reconciliation`의 카드 대조에 쓴다. |
-| 명령 | `Payments.assignClosing` | 마감, 수납 건·환불 몫들 | — | 아직 마감 소속이 없는 것만 받아들인다. 끝난 마감의 소속은 바뀌지 않는다(A-12). |
-| 명령 | `Receivables.record` | 내원 건, 선시행 항목, 사유 | 미수납 | 같은 항목의 미수납은 한 번만 기록된다(F-06.a). |
-| 명령 | `Payments.applyReconciliation` | 대조 결과(승인 없음, 짝 없는 승인, 취소 확인, 부분 취소 확인) | — | T-PLN-06, T-PLN-09 ~ T-PLN-11, T-RFL-04의 전이로 반영한다. |
+| 조회 | `PaymentQueryService.outstandingOf` | 환자 | 미수납, 환불 대기 | 조회 시점의 값. 접수 화면이 쓴다(F-01). |
+| 조회 | `PaymentQueryService.closable` | 창구, 마감 시점 | 완료되었고 마감 소속이 없는 수납 건과 끝난 환불 몫 | 조회 시점의 값. `reconciliation`이 쓴다(A-13, A-26). |
+| 조회 | `PaymentQueryService.linesOfCounter` | 창구, 기간 | 카드 결제와 승인·취소 상태 | `reconciliation`의 카드 대조에 쓴다. |
+| 명령 | `PaymentService.assignClosing` | 마감, 수납 건·환불 몫들 | — | 아직 마감 소속이 없는 것만 받아들인다. 끝난 마감의 소속은 바뀌지 않는다(A-12). |
+| 명령 | `ReceivableService.record` | 내원 건, 선시행 항목, 사유 | 미수납 | 같은 항목의 미수납은 한 번만 기록된다(F-06.a). |
+| 명령 | `PaymentService.applyReconciliation` | 대조 결과(승인 없음, 짝 없는 승인, 취소 확인, 부분 취소 확인) | — | T-PLN-06, T-PLN-09 ~ T-PLN-11, T-RFL-04의 전이로 반영한다. |
 | 받는 이벤트 | `EligibilityRetroactivelyChanged` | (`reception`) | — | 수납 건마다 재산정하고 환불 또는 차액 수납을 시작한다(F-04.d). |
 | 받는 이벤트 | `OrderItemCancellationRequested` | (`order`) | — | 환불액을 정하고 환불을 시작한다(T-RFD-01). |
 | 받는 이벤트 | `OrderItemCancelled`, `OrderItemExpired` | (`order`) | — | 그 항목을 포함한 진행 중인 수납을 거부한다(T-PAY-04). |
