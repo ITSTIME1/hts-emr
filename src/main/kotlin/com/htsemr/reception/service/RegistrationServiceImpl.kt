@@ -7,6 +7,7 @@ import com.htsemr.reception.entity.Visit
 import com.htsemr.reception.external.EligibilityProvider
 import com.htsemr.reception.repository.EligibilityRepository
 import com.htsemr.reception.repository.VisitRepository
+import org.hibernate.exception.ConstraintViolationException
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
@@ -30,52 +31,64 @@ internal class RegistrationServiceImpl(
 ) : RegistrationService {
 
     override fun registerVisit(patientNo: String, departmentCode: String, doctorNo: String, visitDate: LocalDate): Long {
-        // ① 외부 기관 조회: 트랜잭션 밖
-        val response = eligibilityProvider.inquireEligibility(patientNo, visitDate)
-        val now = LocalDateTime.now()
+        val processStartedAt = LocalDateTime.now()
 
-        // ② 내원 건과 첫 자격 기록 저장: 한 트랜잭션. 둘 중 하나라도 실패하면 둘 다 남지 않는다.
+        // 1. 외부 공단에 자격을 조회한다.
+        //    외부 호출은 트랜잭션 밖에서 한다.
+        val eligibilityResponse = eligibilityProvider.inquireEligibility(patientNo = patientNo, visitDate = visitDate)
+
+        // 2. 내원 건과 자격 기록을 한 트랜잭션 안에서 저장한다.
+        //    둘 중 하나라도 실패하면 둘 다 남지 않는다.
         return try {
             transactionTemplate.execute {
-                val visit = visitRepository.saveAndFlush(
+
+                // 3. 내원 건을 저장한다.
+                //    같은 환자·진료일·진료과가 이미 있으면 유일 제약(uk_visit_patient_date_dept)이 거부한다.
+                val savedVisit = visitRepository.saveAndFlush(
                     Visit(
                         patientNo = patientNo,
                         departmentCode = departmentCode,
                         doctorNo = doctorNo,
                         visitDate = visitDate,
-                        registeredAt = now,
+                        registeredAt = processStartedAt,
                     )
                 )
-                val visitId = requireNotNull(visit.id)
 
+                // 4. 자격 기록을 저장한다.
+                //    같은 내원 건의 자격 기록은 seq로 구분하고, (내원 건, seq)는 유일 제약(uk_eligibility_visit_seq)이 하나만 허용한다.
+                //    seq가 항상 1인 이유: 3에서 saveAndFlush가 성공했다면 그 내원 건은 방금 만든 새 IDENTITY를 가진다.
+                //    따라서 이 기록은 그 내원 건의 첫 자격 기록이다.
                 eligibilityRepository.save(
                     Eligibility(
-                        visitId = visitId,
-                        seq = FIRST_SEQ,
-                        insuranceType = response.insuranceType,
-                        copayRate = response.copayRate,
-                        recordedAt = now,
+                        visitId = requireNotNull(savedVisit.id),
+                        seq = 1,
+                        insuranceType = eligibilityResponse.insuranceType,
+                        copayRate = eligibilityResponse.copayRate,
+                        recordedAt = processStartedAt,
                     )
                 )
-                visitId
-            }!!
-        } catch (e: DataIntegrityViolationException) {
-            // 중복 접수는 미리 조회해서 막지 않고 DB 유일 제약에 맡긴다.
-            // 미리 조회하면 동시에 들어온 두 접수가 둘 다 "없음"을 보고 통과할 수 있기 때문이다.
-            if (e.isViolationOf(UK_VISIT_PATIENT_DATE_DEPT)) {
+                savedVisit.id
+            } ?: error("내원 건 저장 트랜잭션이 결과를 돌려주지 않았습니다")
+        } catch(e: DataIntegrityViolationException) {
+            // 5. 위반한 제약의 이름을 꺼낸다.
+            //    제약 위반은 어떤 제약이든, 길이 초과 같은 다른 오류든 같은 DataIntegrityViolationException으로 온다.
+            //    그래서 예외 타입이 아니라 제약 이름으로 원인을 구분한다.
+            val violatedConstraint = generateSequence<Throwable>(e) { it.cause }
+                .filterIsInstance<ConstraintViolationException>()
+                .firstOrNull()
+                ?.constraintName
+                ?.substringAfterLast('.')
+
+            // 6. 같은 내원 건(uk_visit_patient_date_dept)일 때만 업무 예외로 바꾼다.
+            if (violatedConstraint.equals("uk_visit_patient_date_dept", ignoreCase = true)) {
                 throw DuplicateVisitException(patientNo, visitDate, departmentCode, e)
             }
+
+            // 7. 나머지는 그대로 던진다.
+            //    자격 기록 순번 중복(uk_eligibility_visit_seq)은 접수에서 정상적으로는 생길 수 없으므로 로직의 문제다.
+            //    업무 예외로 바꾸지 않고 시스템 예외로 드러낸다.
             throw e
         }
     }
 
-    private fun DataIntegrityViolationException.isViolationOf(constraint: String) =
-        generateSequence<Throwable>(this) { it.cause }
-            .any { it.message?.contains(constraint, ignoreCase = true) == true }
-
-    private companion object {
-        /** 접수 때 남기는 자격 기록은 그 내원 건의 첫 기록이다. */
-        const val FIRST_SEQ = 1
-        const val UK_VISIT_PATIENT_DATE_DEPT = "uk_visit_patient_date_dept"
-    }
 }
