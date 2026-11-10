@@ -45,6 +45,8 @@ internal class OrderItem private constructor(
 
     /** 수납 전 오더 취소(T-ORD-04). 상태를 바꾸고, 함께 저장할 취소 기록을 돌려준다. */
     fun cancel(doctorNo : String, reason : String, cancelledAt : LocalDateTime) : OrderItemCancellation {
+        // 누가 왜 취소했는지 답할 수 있어야 한다. Oracle은 ''을 null로 보아 not null이 막지만, 공백만 있는 사유는 통과하므로 여기서 막는다.
+        require(reason.isNotBlank()) { "취소 사유가 없습니다" }
         val orderItemId = requireNotNull(id) { "저장되지 않은 오더 항목" }
         if(status != OrderItemStatus.ORDERED) {
             throw OrderItemNotCancellableException(orderItemId, status)
