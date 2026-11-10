@@ -22,10 +22,10 @@
 
 | 종류 | 이름 | 입력 | 결과 | 보장 수준 |
 | :--- | :--- | :--- | :--- | :--- |
-| 변경 | `OrderService.placeOrder` | 내원 건, 오더 의사, 항목 목록(`NewOrderItem`: 수가 항목, 수량, 의사의 선시행 지정) | 오더 id | 오더와 항목은 함께 저장되거나 함께 저장되지 않는다. 내원 건이 없으면 `VisitNotFoundException`(reception), 수가 항목이 없으면 `FeeItemNotFoundException`(master), 진료일에 유효한 수가가 없으면 `NoPriceOnVisitDateException`(T-ORD-01) |
-| 변경 | `OrderService.cancelOrderItem` | 오더 항목, 취소 의사, 사유 | — | `ORDERED`일 때만 `CANCELLED`로 바꾸고 오더 취소 기록을 남긴다(T-ORD-04). 슬라이스 1에서는 수납 건의 사실을 확인하지 않는다(7절) |
+| 변경 | `OrderService.placeOrder` | 내원 건, 오더 의사, 항목 목록(`NewOrderItem`: 수가 항목, 수량, 의사의 선시행 지정) | 오더 id | 오더와 항목은 함께 저장되거나 함께 저장되지 않는다. 항목 목록이 비어 있으면 거부한다(`IllegalArgumentException`). 내원 건이 없으면 `VisitNotFoundException`(reception), 수가 항목이 없으면 `FeeItemNotFoundException`(master), 진료일에 유효한 수가가 없으면 `NoPriceOnVisitDateException`(T-ORD-01) |
+| 변경 | `OrderService.cancelOrderItem` | 오더 항목, 취소 의사, 사유 | — | `ORDERED`일 때만 `CANCELLED`로 바꾸고 오더 취소 기록을 남긴다(T-ORD-04). 다른 상태면 `OrderItemNotCancellableException`, 오더 항목이 없으면 `OrderItemNotFoundException`. 슬라이스 1에서는 수납 건의 사실을 확인하지 않는다(7절) |
 | 조회 | `OrderItemQueryService.itemsOfVisit` | 내원 건 | 오더 항목과 상태(`OrderItemView`) | 조회 시점의 상태. 없으면 빈 목록. `billing`이 산정 대상을 고를 때 쓴다. |
-| 조회 | `OrderItemQueryService.statusesOf` | 오더 항목들 | 항목별 상태(`OrderItemStatus`) | 조회 시점의 상태. 효력이 있는지는 `OrderItemStatus.isEffective`(`ORDERED`, `EXECUTED`, INV-04)로 판단한다. `payment`가 수납 완료 직전에 쓴다(T-PAY-03). 완료 판단과 어떻게 묶일지는 미정(ADR-0003) |
+| 조회 | `OrderItemQueryService.statusesOf` | 오더 항목들 | 항목별 상태(`OrderItemStatus`) | 조회 시점의 상태. 하나라도 없는 항목이 있으면 `OrderItemNotFoundException`. 모르는 항목을 조용히 통과시키지 않는다. 효력이 있는지는 `OrderItemStatus.isEffective`(`ORDERED`, `EXECUTED`, INV-04)로 판단한다. `payment`가 수납 완료 직전에 쓴다(T-PAY-03). 완료 판단과 어떻게 묶일지는 미정(ADR-0003) |
 | 이벤트 | `OrderItemCancellationRequested` | 오더 항목, 요청자(의사, 시스템), 사유 | — | 취소 요청이 확정된 뒤 발행, 유실되지 않음. 받는 쪽: `payment`(T-RFD-01) |
 | 이벤트 | `OrderItemCancelled`, `OrderItemExpired` | 오더 항목 | — | 상태가 확정된 뒤 발행. 받는 쪽: `payment`(진행 중 수납 거부, F-04.c) |
 | 받는 사실 | 수납 완료, 환불 완료 | 오더 항목들 | — | `payment`에서 받는다. `order`는 `payment`에 코드 의존을 갖지 않는다. 방식은 미정(ADR-0002) |
