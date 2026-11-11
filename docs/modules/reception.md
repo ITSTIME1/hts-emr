@@ -1,6 +1,6 @@
 # reception
 
-상태: 초안 · 갱신: 2026-11-09
+상태: 초안 · 갱신: 2026-11-11
 
 ## 1. 책임 (Responsibility)
 - 접수로 내원 건을 만든다(F-01). 환자, 진료과, 진료 의사는 다른 시스템에서 받은 값으로만 가진다(A-29).
@@ -20,8 +20,8 @@
 | 종류 | 이름 | 입력 | 결과 | 보장 수준 |
 | :--- | :--- | :--- | :--- | :--- |
 | 변경 | `RegistrationService.registerVisit` | 환자 번호, 진료과 코드, 진료 의사 번호, 진료일 | 내원 건 id | 외부 조회는 트랜잭션 밖에서 먼저 하고, 내원 건과 첫 자격 기록은 함께 저장되거나 함께 저장되지 않는다. 같은 환자·진료일·진료과면 `DuplicateVisitException`. 화면이 호출하지만, 여러 모듈에 걸친 재현 테스트가 실제 흐름대로 내원 건을 만들 수 있도록 공개한다 |
-| 조회 | `VisitQueryService.visit` | 내원 건 | 환자, 진료과, 진료 의사, 진료일 | 조회 시점의 값 |
-| 조회 | `EligibilityQueryService.currentEligibility` | 내원 건 | 가장 나중의 자격 기록 | 기존 기록은 고치지 않으므로, 이전에 받은 결과는 그때의 기록으로 남아 있다(A-03) |
+| 조회 | `VisitQueryService.visit` | 내원 건 | 환자, 진료과, 진료 의사, 진료일 | 조회 시점의 값. 내원 건이 없으면 `VisitNotFoundException` |
+| 조회 | `EligibilityQueryService.currentEligibility` | 내원 건 | 가장 나중의 자격 기록 | 기존 기록은 고치지 않으므로, 이전에 받은 결과는 그때의 기록으로 남아 있다(A-03). 내원 건이 없으면 `VisitNotFoundException`(접수가 내원 건과 첫 자격 기록을 함께 저장하므로 자격 기록이 없으면 내원 건도 없다) |
 | 이벤트 | `EligibilityRetroactivelyChanged` | 내원 건, 이전 자격, 새 자격 | — | 새 자격 기록이 확정된 뒤에만 발행되고 유실되지 않는다. 받는 쪽: `payment` |
 
 ## 4. 모듈 의존성 (Dependencies)
