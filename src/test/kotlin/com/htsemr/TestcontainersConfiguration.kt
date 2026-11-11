@@ -5,6 +5,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.context.annotation.Bean
 import org.testcontainers.oracle.OracleContainer
 import org.testcontainers.utility.DockerImageName
+import java.time.Duration
 
 /**
  * 테스트와 로컬 실행에서 쓰는 Oracle 컨테이너.
@@ -20,6 +21,10 @@ import org.testcontainers.utility.DockerImageName
  * - DB를 같이 쓰므로 테스트는 자기가 만든 데이터를 반드시 지워야 한다(@AfterEach 정리나 @Transactional 롤백).
  * - 컨텍스트가 닫히면 Spring이 컨테이너도 닫는다. 컨텍스트는 JVM이 끝날 때 닫히므로 괜찮지만,
  *   @DirtiesContext처럼 실행 중에 컨텍스트를 닫으면 다른 테스트의 DB까지 멈춘다.
+ *
+ * [준비 대기 시간은 3분이다]
+ * 기본값 60초로는 CI 러너(공유 VM이라 실행마다 속도가 다르다)에서 Oracle이 제때 뜨지 못해
+ * 모든 컨텍스트가 만들어지지 못한 적이 있다. 로컬에서는 보통 수십 초면 뜬다.
  */
 @TestConfiguration(proxyBeanMethods = false)
 class TestcontainersConfiguration {
@@ -30,5 +35,6 @@ class TestcontainersConfiguration {
 
     companion object {
         private val ORACLE = OracleContainer(DockerImageName.parse("gvenzl/oracle-free:23-slim-faststart"))
+            .withStartupTimeout(Duration.ofMinutes(3))
     }
 }
