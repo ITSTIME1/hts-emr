@@ -23,5 +23,12 @@ jobs:
         
       - name: 테스트
         run: ./gradlew test
+        
+      - name: 테스트 리포트 올리기 (실패했을 때만)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: build/reports/tests/test
           
         
