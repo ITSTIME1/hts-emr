@@ -25,5 +25,11 @@ data class Money(val amount : Long) : Comparable<Money>  {
      */
     operator fun plus(other : Money) = Money(amount + other.amount)
     operator fun minus(other : Money) = Money(amount - other.amount)
+
+    /**
+     * 정수배. 예: 단가 × 수량.
+     * 비율을 곱하거나 끝자리를 버리는 계산은 업무 규칙이라 여기 두지 않는다(billing의 끝전 처리, common.md).
+     */
+    operator fun times(multiplier : Int) = Money(amount * multiplier)
     override fun compareTo(other: Money) = amount.compareTo(other.amount)
 }
