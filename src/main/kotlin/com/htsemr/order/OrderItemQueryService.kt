@@ -3,8 +3,8 @@ package com.htsemr.order
 /**
  * 오더 항목 조회. order 모듈의 공개 기능이며 조회만 한다.
  *
- * - billing: 산정 대상 항목을 고른다.
- * - payment: 수납 완료 직전에 항목이 아직 효력이 있는지 확인한다(T-PAY-03).
+ * - payment: 수납하지 않은 항목을 골라 산정 대상으로 넘기고(A-02),
+ *   수납 완료 직전에 항목이 아직 효력이 있는지 확인한다(T-PAY-03).
  */
 interface OrderItemQueryService {
 
