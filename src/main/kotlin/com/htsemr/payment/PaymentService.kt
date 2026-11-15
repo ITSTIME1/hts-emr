@@ -33,13 +33,13 @@ interface PaymentService {
      *   다른 완료된 수납 건에 없어야(INV-03) 완료한다.
      * - 완료가 막혀도 받은 결제는 남는다. 결과로 알린다([CashResult.CompletionBlocked]).
      *
-     * @param received 환자에게서 받은 금액. 거스름돈 = received − applied
-     * @param applied 수납 반영 금액. 결제 합계에는 이 값만 산입한다.
-     * @throws IllegalArgumentException 수납 반영 금액이 0 이하이거나 받은 금액보다 클 때, 수납자 번호가 비었을 때
+     * @param received 환자에게서 받은 금액. 거스름돈 = received − amount
+     * @param amount 결제 금액. 결제 합계에는 이 값만 산입한다.
+     * @throws IllegalArgumentException 결제 금액이 0 이하이거나 받은 금액보다 클 때, 수납자 번호가 비었을 때
      * @throws PaymentAmountExceededException 결제 합계가 본인부담 합계를 넘을 때(A-20)
-     * @throws InvoiceAlreadyPaidException 그 산정으로 만든 수납 건이 이미 끝났을 때(A-22)
+     * @throws InvoiceAlreadyUsedException 그 산정으로 만든 수납 건이 이미 끝났을 때(A-22)
      * @throws InvoiceNotFoundException 산정이 없을 때
      * @throws CounterNotFoundException 창구가 없을 때
      */
-    fun receiveCash(invoiceId: Long, counterId: Long, cashierNo: String, received: Money, applied: Money): CashResult
+    fun receiveCash(invoiceId: Long, counterId: Long, cashierNo: String, received: Money, amount: Money): CashResult
 }

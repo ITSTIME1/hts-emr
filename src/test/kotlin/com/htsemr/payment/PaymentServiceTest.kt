@@ -314,7 +314,7 @@ internal class PaymentServiceTest @Autowired constructor(
             val completedId = payFully()
 
             // 1,000원은 확인이 없었다면 새 수납 건으로 아무 문제 없이 받아졌을 금액이다. 실패 원인을 "거부 안 함" 하나로 좁힌다.
-            val exception = assertThrows<InvoiceAlreadyPaidException> {
+            val exception = assertThrows<InvoiceAlreadyUsedException> {
                 paymentService.receiveCash(INVOICE_ID, COUNTER_ID, CASHIER_NO, Money(1_000), Money(1_000))
             }
 

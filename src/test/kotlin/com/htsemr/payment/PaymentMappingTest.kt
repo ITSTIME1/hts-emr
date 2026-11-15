@@ -65,7 +65,7 @@ internal class PaymentMappingTest @Autowired constructor(
         val view = transactionTemplate.execute { paymentRepository.findById(paymentId).get().toPaymentView() }!!
 
         assertThat(view.orderItemIds).containsExactly(501L, 502L, 503L)
-        assertThat(view.lines.map { it.appliedAmount }).containsExactly(Money(20_000), Money(9_300))
+        assertThat(view.lines.map { it.amount }).containsExactly(Money(20_000), Money(9_300))
         assertThat(view.lines.map { it.change }).containsExactly(Money.ZERO, Money(700))
         assertThat(view.paidAmount).isEqualTo(Money(29_300))
         assertThat(view.status).isEqualTo(PaymentStatus.IN_PROGRESS)

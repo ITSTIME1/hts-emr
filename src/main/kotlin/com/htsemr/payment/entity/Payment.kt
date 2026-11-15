@@ -72,11 +72,11 @@ internal class Payment private constructor(
 
     val lines: List<PaymentLine> get() = lineEntities.toList()
 
-    /** 결제 합계. 받은(RECEIVED) 결제의 수납 반영 금액만 더한다(T-PAY-03). */
+    /** 결제 합계. 받은(RECEIVED) 결제의 결제 금액만 더한다(T-PAY-03). */
     val paidAmount: Money
         get() = lineEntities
             .filter { it.status == PaymentLineStatus.RECEIVED }
-            .fold(Money.ZERO) { sum, line -> sum + line.appliedAmount }
+            .fold(Money.ZERO) { sum, line -> sum + line.amount }
 
     /** 남은 금액. */
     val remaining: Money get() = patientAmount - paidAmount
@@ -88,10 +88,10 @@ internal class Payment private constructor(
      *
      * @throws PaymentAmountExceededException 이 결제를 더하면 결제 합계가 본인부담 합계를 넘을 때(A-20)
      */
-    fun receiveCash(received: Money, applied: Money, receivedAt: LocalDateTime) {
+    fun receiveCash(received: Money, amount: Money, receivedAt: LocalDateTime) {
         check(status == PaymentStatus.IN_PROGRESS) { "진행 중이 아닌 수납 건입니다: 수납 건 $id, $status" }
-        val line = PaymentLine.cash(received, applied, receivedAt)
-        val paidAfter = paidAmount + applied
+        val line = PaymentLine.cash(received, amount, receivedAt)
+        val paidAfter = paidAmount + amount
         if (paidAfter > patientAmount) {
             throw PaymentAmountExceededException(invoiceId, patientAmount, paidAfter)
         }
@@ -118,9 +118,12 @@ internal class Payment private constructor(
         check(isFullyPaid) { "결제 합계(${paidAmount.amount})가 본인부담 합계(${patientAmount.amount})에 이르지 않았습니다" }
 
         val blockers = CompletionBlockers(
+            // 완료의 상태를 만족하는게 하나도 없을 수 있음.
             ineffectiveItemIds = orderItemIds.filterNot { itemStatuses.getValue(it).isEffective }.toSet(),
             alreadyPaidItemIds = orderItemIds.filter { it in alreadyPaidItemIds }.toSet(),
         )
+
+        // 둘 다 비어 있는 경우 ( ORDERED, EXECUTED 로만 구성되어 있으며, 이미 계산된 것도 없는 경우)
         if (!blockers.isEmpty) return blockers
 
         status = PaymentStatus.COMPLETED
