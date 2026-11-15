@@ -87,7 +87,7 @@ internal class PaymentTest {
 
         @Test
         fun `완료된 수납 건에는 받지 않는다`() {
-            val payment = fullyPaid().apply { complete(allEffective(), NOW) }
+            val payment = fullyPaid().apply { complete(allEffective(), emptySet(), NOW) }
 
             assertThrows<IllegalStateException> { payment.receiveCash(Money(1_000), Money(1_000), NOW) }
         }
@@ -97,12 +97,12 @@ internal class PaymentTest {
     inner class `완료하면` {
 
         @Test
-        fun `항목이 모두 효력이 있으면 완료하고 완료 시각을 남긴다`() {
+        fun `항목이 모두 효력이 있고 다른 수납 건에 없으면 완료하고 완료 시각을 남긴다`() {
             val payment = fullyPaid()
 
-            val ineffective = payment.complete(allEffective(), COMPLETED_AT)
+            val blockers = payment.complete(allEffective(), emptySet(), COMPLETED_AT)
 
-            assertThat(ineffective).isEmpty()
+            assertThat(blockers.isEmpty).isTrue()
             assertThat(payment.status).isEqualTo(PaymentStatus.COMPLETED)
             assertThat(payment.completedAt).isEqualTo(COMPLETED_AT)
         }
@@ -113,19 +113,46 @@ internal class PaymentTest {
             val payment = fullyPaid()
             val statuses = allEffective() + (502L to ineffectiveStatus)
 
-            val ineffective = payment.complete(statuses, COMPLETED_AT)
+            val blockers = payment.complete(statuses, emptySet(), COMPLETED_AT)
 
-            assertThat(ineffective).containsExactly(502L)
+            assertThat(blockers.ineffectiveItemIds).containsExactly(502L)
+            assertThat(blockers.alreadyPaidItemIds).isEmpty()
             assertThat(payment.status).isEqualTo(PaymentStatus.IN_PROGRESS)
             assertThat(payment.completedAt).isNull()
             assertThat(payment.lines).hasSize(2)   // 받은 결제는 그대로다
         }
 
         @Test
+        fun `다른 완료된 수납 건에 이미 들어 있는 항목이 있으면 완료하지 않고 그 항목을 알린다`() {
+            val payment = fullyPaid()
+
+            // 999는 이 수납 건에 없는 항목이다. 넘겨받아도 이 수납 건의 항목만 골라 알린다.
+            val blockers = payment.complete(allEffective(), setOf(501L, 503L, 999L), COMPLETED_AT)
+
+            assertThat(blockers.alreadyPaidItemIds).containsExactlyInAnyOrder(501L, 503L)
+            assertThat(blockers.ineffectiveItemIds).isEmpty()
+            assertThat(payment.status).isEqualTo(PaymentStatus.IN_PROGRESS)
+            assertThat(payment.completedAt).isNull()
+            assertThat(payment.lines).hasSize(2)
+        }
+
+        @Test
+        fun `두 이유에 함께 걸리면 둘 다 알린다`() {
+            val payment = fullyPaid()
+            val statuses = allEffective() + (502L to OrderItemStatus.CANCELLED)
+
+            val blockers = payment.complete(statuses, setOf(501L), COMPLETED_AT)
+
+            assertThat(blockers.ineffectiveItemIds).containsExactly(502L)
+            assertThat(blockers.alreadyPaidItemIds).containsExactly(501L)
+            assertThat(payment.status).isEqualTo(PaymentStatus.IN_PROGRESS)
+        }
+
+        @Test
         fun `결제 합계가 낼 돈에 이르지 않았으면 완료할 수 없다`() {
             val payment = started().apply { receiveCash(Money(20_000), Money(20_000), NOW) }
 
-            assertThrows<IllegalStateException> { payment.complete(allEffective(), COMPLETED_AT) }
+            assertThrows<IllegalStateException> { payment.complete(allEffective(), emptySet(), COMPLETED_AT) }
         }
     }
 

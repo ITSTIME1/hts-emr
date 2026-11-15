@@ -10,6 +10,13 @@ class NothingToPayException(val visitId: Long)
 class PaymentAmountExceededException(val invoiceId: Long, val patientAmount: Money, val paidAmountAfter: Money)
     : RuntimeException("산정 $invoiceId: 결제 합계 ${paidAmountAfter.amount}원이 본인부담 합계 ${patientAmount.amount}원을 넘습니다")
 
+/**
+ * 이 산정으로 만든 수납 건이 이미 있다(A-22, INV-05). 한 산정으로는 한 번만 수납한다. 다시 받으려면 새로 산정한다.
+ * 진행 중인 수납 건은 이어서 쓰므로, 이 예외는 그 산정의 수납 건이 이미 끝났을 때(슬라이스 1에서는 완료) 난다.
+ */
+class InvoiceAlreadyPaidException(val invoiceId: Long)
+    : RuntimeException("산정 $invoiceId 으로 만든 수납 건이 이미 있습니다. 다시 받으려면 새로 산정하세요")
+
 /** 수납 건이 없다. */
 class PaymentNotFoundException(val paymentId: Long)
     : RuntimeException("수납 건 $paymentId 이 없습니다")

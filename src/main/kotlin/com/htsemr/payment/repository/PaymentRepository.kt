@@ -15,6 +15,14 @@ internal interface PaymentRepository : JpaRepository<Payment, Long> {
      */
     fun findByInvoiceIdAndStatus(invoiceId: Long, status: PaymentStatus): Payment?
 
+    /**
+     * 그 산정으로 만든 수납 건이 상태와 상관없이 하나라도 있는지(A-22).
+     *
+     * 한 건만 돌려주는 findByInvoiceId가 아니라 exists인 이유: C-06을 재현하면 같은 산정의 수납 건이 둘이 되는데,
+     * 한 건 조회는 그때 결과 개수 예외를 던져 재현하려던 이중 수납을 가린다.
+     */
+    fun existsByInvoiceId(invoiceId: Long): Boolean
+
     /** 주어진 오더 항목 가운데, 주어진 상태의 수납 건에 들어 있는 것. 수납하지 않은 항목을 고를 때 쓴다(A-02). */
     @Query(
         """
