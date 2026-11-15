@@ -1,21 +1,27 @@
 package com.htsemr.payment
 
 import com.htsemr.TestcontainersConfiguration
+import com.htsemr.billing.BillingService
 import com.htsemr.billing.InvoiceLineView
+import com.htsemr.billing.InvoiceQueryService
 import com.htsemr.billing.InvoiceView
 import com.htsemr.common.Money
+import com.htsemr.master.CounterQueryService
 import com.htsemr.master.CoverageType
+import com.htsemr.order.OrderItemQueryService
 import com.htsemr.order.OrderItemStatus
 import com.htsemr.payment.entity.Payment
 import com.htsemr.payment.mapping.toPaymentView
 import com.htsemr.payment.repository.PaymentRepository
 import com.htsemr.reception.InsuranceType
+import com.htsemr.reception.VisitQueryService
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.context.annotation.Import
 import org.springframework.modulith.test.ApplicationModuleTest
+import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.LocalDateTime
 
@@ -32,6 +38,14 @@ internal class PaymentMappingTest @Autowired constructor(
     private val paymentRepository: PaymentRepository,
     private val transactionTemplate: TransactionTemplate,
 ) {
+
+    // @ApplicationModuleTest는 payment 모듈만 띄운다. 서비스 구현체가 주입받는 다른 모듈의 공개 기능을 대역으로 채운다.
+    // 이 테스트는 리포지토리만 쓰므로 대역의 응답은 설정하지 않는다.
+    @MockitoBean private lateinit var visitQueryService: VisitQueryService
+    @MockitoBean private lateinit var orderItemQueryService: OrderItemQueryService
+    @MockitoBean private lateinit var billingService: BillingService
+    @MockitoBean private lateinit var invoiceQueryService: InvoiceQueryService
+    @MockitoBean private lateinit var counterQueryService: CounterQueryService
 
     @AfterEach
     fun cleanUp() {
@@ -62,7 +76,7 @@ internal class PaymentMappingTest @Autowired constructor(
         val paymentId = transactionTemplate.execute {
             val payment = Payment.start(invoice(), counterId = 7, cashierNo = "T-C01", startedAt = NOW)
             payment.receiveCash(Money(29_300), Money(29_300), NOW)
-            payment.complete(ALL_EFFECTIVE, COMPLETED_AT)
+            payment.complete(ALL_EFFECTIVE, emptySet(), COMPLETED_AT)
             requireNotNull(paymentRepository.save(payment).id)
         }!!
 
@@ -89,7 +103,7 @@ internal class PaymentMappingTest @Autowired constructor(
             // 완료된 수납 건(항목 501~503)과, 진행 중인 수납 건(같은 항목) 하나씩
             val completed = Payment.start(invoice(), counterId = 7, cashierNo = "T-C01", startedAt = NOW)
             completed.receiveCash(Money(29_300), Money(29_300), NOW)
-            completed.complete(ALL_EFFECTIVE, COMPLETED_AT)
+            completed.complete(ALL_EFFECTIVE, emptySet(), COMPLETED_AT)
             paymentRepository.save(completed)
             paymentRepository.save(Payment.start(invoice(), counterId = 7, cashierNo = "T-C02", startedAt = NOW))
         }

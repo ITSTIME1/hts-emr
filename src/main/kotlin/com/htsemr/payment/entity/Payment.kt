@@ -101,21 +101,31 @@ internal class Payment private constructor(
     /**
      * 수납 완료(T-PAY-03). 결제 합계가 본인부담 합계와 같을 때만 부른다.
      *
-     * 포함한 항목이 모두 효력이 있으면(INV-04) 완료하고 빈 집합을 돌려준다.
-     * 효력 없는 항목이 있으면 완료하지 않고 그 항목 id들을 돌려준다. 상태는 진행 중 그대로다.
+     * 포함한 항목이 모두 효력이 있고(INV-04) 다른 완료된 수납 건에 없으면(INV-03) 완료하고, 빈 [CompletionBlockers]를 돌려준다.
+     * 하나라도 걸리면 완료하지 않고 걸린 항목들을 이유별로 돌려준다. 상태는 진행 중 그대로다.
+     *
+     * 다른 수납 건은 이 수납 건이 볼 수 없으므로, 서비스가 찾아서 넘기고 판단은 여기서 한다.
      *
      * @param itemStatuses 포함한 항목의 지금 상태. 서비스가 order의 공개 조회로 가져온다. 포함한 항목이 모두 들어 있어야 한다.
+     * @param alreadyPaidItemIds 다른 완료된 수납 건에 이미 들어 있는 항목. 서비스가 리포지토리로 찾는다.
      */
-    fun complete(itemStatuses: Map<Long, OrderItemStatus>, completedAt: LocalDateTime): Set<Long> {
+    fun complete(
+        itemStatuses: Map<Long, OrderItemStatus>,
+        alreadyPaidItemIds: Set<Long>,
+        completedAt: LocalDateTime,
+    ): CompletionBlockers {
         check(status == PaymentStatus.IN_PROGRESS) { "진행 중이 아닌 수납 건입니다: 수납 건 $id, $status" }
         check(isFullyPaid) { "결제 합계(${paidAmount.amount})가 본인부담 합계(${patientAmount.amount})에 이르지 않았습니다" }
 
-        val ineffective = orderItemIds.filterNot { itemStatuses.getValue(it).isEffective }.toSet()
-        if (ineffective.isNotEmpty()) return ineffective
+        val blockers = CompletionBlockers(
+            ineffectiveItemIds = orderItemIds.filterNot { itemStatuses.getValue(it).isEffective }.toSet(),
+            alreadyPaidItemIds = orderItemIds.filter { it in alreadyPaidItemIds }.toSet(),
+        )
+        if (!blockers.isEmpty) return blockers
 
         status = PaymentStatus.COMPLETED
         this.completedAt = completedAt
-        return emptySet()
+        return blockers
     }
 
     companion object {

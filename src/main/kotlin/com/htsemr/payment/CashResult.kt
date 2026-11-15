@@ -20,8 +20,15 @@ sealed interface CashResult {
     data class Completed(override val paymentId: Long) : CashResult
 
     /**
-     * 결제 합계는 도달했지만, 포함한 오더 항목 중 효력이 없는 것이 있어 완료하지 않았다(INV-04).
+     * 결제 합계는 도달했지만, 포함한 오더 항목 때문에 완료하지 않았다. 막은 이유마다 항목을 따로 알린다(둘 다일 수 있다).
      * 수납 건은 진행 중으로 남고 받은 결제도 그대로다. 수납 거부와 결제 되돌림은 다음 슬라이스에서 만든다.
+     *
+     * @property ineffectiveItemIds 효력이 없는 항목(취소·취소 요청·소멸, INV-04)
+     * @property alreadyPaidItemIds 다른 완료된 수납 건에 이미 들어 있는 항목(INV-03)
      */
-    data class CompletionBlocked(override val paymentId: Long, val ineffectiveItemIds: Set<Long>) : CashResult
+    data class CompletionBlocked(
+        override val paymentId: Long,
+        val ineffectiveItemIds: Set<Long>,
+        val alreadyPaidItemIds: Set<Long>,
+    ) : CashResult
 }
