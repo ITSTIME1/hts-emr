@@ -48,11 +48,11 @@ internal class PaymentTest {
     inner class `현금을 받으면` {
 
         @Test
-        fun `수납 반영 금액만 결제 합계에 더하고 거스름돈은 받은 금액과의 차이다`() {
+        fun `결제 금액만 결제 합계에 더하고 거스름돈은 받은 금액과의 차이다`() {
             val payment = started()
 
-            payment.receiveCash(received = Money(20_000), applied = Money(20_000), receivedAt = NOW)
-            payment.receiveCash(received = Money(10_000), applied = Money(9_300), receivedAt = NOW)
+            payment.receiveCash(received = Money(20_000), amount = Money(20_000), receivedAt = NOW)
+            payment.receiveCash(received = Money(10_000), amount = Money(9_300), receivedAt = NOW)
 
             assertThat(payment.paidAmount).isEqualTo(Money(29_300))
             assertThat(payment.remaining).isEqualTo(Money.ZERO)
@@ -75,12 +75,12 @@ internal class PaymentTest {
         }
 
         @Test
-        fun `수납 반영 금액이 0이면 거부한다`() {
+        fun `결제 금액이 0이면 거부한다`() {
             assertThrows<IllegalArgumentException> { started().receiveCash(Money(1_000), Money.ZERO, NOW) }
         }
 
         @Test
-        fun `받은 금액이 수납 반영 금액보다 작으면 거부한다`() {
+        fun `받은 금액이 결제 금액보다 작으면 거부한다`() {
             // 거스름돈이 음수가 되는 경우다.
             assertThrows<IllegalArgumentException> { started().receiveCash(Money(9_000), Money(9_300), NOW) }
         }

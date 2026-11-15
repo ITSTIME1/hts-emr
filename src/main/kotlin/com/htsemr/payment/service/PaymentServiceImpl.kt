@@ -7,7 +7,7 @@ import com.htsemr.common.Money
 import com.htsemr.master.CounterQueryService
 import com.htsemr.order.OrderItemQueryService
 import com.htsemr.payment.CashResult
-import com.htsemr.payment.InvoiceAlreadyPaidException
+import com.htsemr.payment.InvoiceAlreadyUsedException
 import com.htsemr.payment.NothingToPayException
 import com.htsemr.payment.PaymentService
 import com.htsemr.payment.PaymentStatus
@@ -61,44 +61,49 @@ internal class PaymentServiceImpl(
         counterId: Long,
         cashierNo: String,
         received: Money,
-        applied: Money,
+        amount: Money,
     ): CashResult {
         val now = LocalDateTime.now()
 
-        // 1. 그 산정으로 진행 중인 수납 건이 있으면 이어서 쓴다(T-PAY-02).
-        // 2. 없으면 수납 건을 새로 만든다(T-PAY-01). 단, 그 산정의 수납 건이 이미 있으면(완료 등) 거부한다(A-22, INV-05).
-        //    "진행 중이 없다"에는 "아직 시작 안 함"과 "이미 끝남"이 섞여 있어서, 둘을 여기서 가른다.
-        //    이 결제는 받으면 안 되는 돈이므로 예외(롤백)가 맞다. 아직 아무것도 기록하지 않았다.
-        //    순서대로 부른 경우는 이 확인으로 막힌다. 두 창구가 같은 순간에 첫 결제를 받으면 둘 다 "없다"를 보고
-        //    둘 다 만든다. 확인과 생성 사이의 이 틈은 C-06의 재현 대상이다(ADR-0003).
+        // 1. 수납 건을 정한다.
+        //    이 산정의 진행 중인 수납 건이 있으면 이어서 쓴다(T-PAY-02).
+        //    없으면(null) 두 경우가 섞여 있어서 existsByInvoiceId로 가른다.
+        //    (가) 이 산정으로 만든 수납 건이 아직 없다 → 새로 만든다(T-PAY-01).
+        //    (나) 있지만 진행 중이 아니다(COMPLETED, REJECTED, HELD) → 새로 만들면 안 된다.
+        //        한 산정으로는 수납 건 하나다(A-22, INV-05). 다시 받으려면 새로 산정해야 한다.
+        //        슬라이스 1에서 (나)는 COMPLETED뿐이다. REJECTED, HELD는 거부·보류를 만들 때 생긴다.
+        //    산정 자체가 없으면(잘못된 번호) 그다음 invoice 조회에서 InvoiceNotFoundException이 난다.
+        //    틈: 두 창구가 같은 순간에 첫 결제를 받으면 둘 다 (가)를 보고 둘 다 만든다(C-06, ADR-0003).
         val payment = paymentRepository.findByInvoiceIdAndStatus(invoiceId, PaymentStatus.IN_PROGRESS)
             ?: run {
-                if (paymentRepository.existsByInvoiceId(invoiceId)) throw InvoiceAlreadyPaidException(invoiceId)
+                if (paymentRepository.existsByInvoiceId(invoiceId)) throw InvoiceAlreadyUsedException(invoiceId)
                 val invoice = invoiceQueryService.invoice(invoiceId)
                 val counter = counterQueryService.counter(counterId)
                 Payment.start(invoice, counter.id, cashierNo, now)
             }
 
-        payment.receiveCash(received, applied, now)
+        // 2. 결제를 붙인다. 메모리 속 수납 건에 붙이기만 하고, 저장은 3이나 5에서 한다.
+        //    결제 합계가 본인부담 합계를 넘으면 PaymentAmountExceededException이 난다(A-20).
+        //    그러면 트랜잭션이 롤백되어, 이 호출에서 새로 만든 수납 건도 남지 않는다.
+        payment.receiveCash(received, amount, now)
 
-        // 3. 아직 덜 냈으면 진행 중으로 저장한다. 새 수납 건이면 save에서 id가 생긴다(IDENTITY).
+        // 3. 아직 덜 냈으면 진행 중으로 저장하고 남은 금액을 알린다. 여기서 끝난다.
+        //    isFullyPaid는 저장된 값이 아니라 부를 때마다 계산하므로, 2에서 붙인 결제까지 반영돼 있다.
+        //    새 수납 건이면 save에서 id가 생긴다(IDENTITY).
         if (!payment.isFullyPaid) {
             val saved = paymentRepository.save(payment)
             return CashResult.InProgress(requireNotNull(saved.id), saved.remaining)
         }
 
-        // 4. 다 냈으면 완료 조건(T-PAY-03)의 재료를 모아 완료를 시도한다. 판단은 Payment.complete가 한다.
+        // 4. 여기까지 왔으면 다 냈다. 완료 조건(T-PAY-03)의 재료를 모아 완료를 시도한다. 판단은 Payment.complete가 한다.
         //    - 항목의 지금 상태: order에 묻는다(INV-04).
         //    - 다른 완료된 수납 건에 이미 들어 있는 항목: 이 수납 건은 다른 수납 건을 볼 수 없으므로 여기서 찾는다(INV-03).
-        //      지금 수납 건은 아직 진행 중이라 결과에 섞이지 않는다.
-        //    순서대로 부른 경우는 이 확인으로 막힌다. 확인과 완료 사이의 틈(동시에 완료하는 C-03, 동시에 취소되는 C-04)은
-        //    ADR-0003의 재현 대상이다.
+        //    틈: 두 수납 건이 같은 순간에 완료하면 둘 다 "없다"를 보고 둘 다 완료한다(C-03, ADR-0003).
         val statuses = orderItemQueryService.statusesOf(payment.orderItemIds)
         val alreadyPaidItemIds =
             paymentRepository.findOrderItemIdsIn(payment.orderItemIds, PaymentStatus.COMPLETED).toSet()
         val blockers = payment.complete(statuses, alreadyPaidItemIds, now)
 
-        // 5. 완료가 막혀도 예외가 아니라 결과로 알린다. 예외를 던지면 위에서 받은 현금 기록까지 롤백된다(payment.md 7절).
         val saved = paymentRepository.save(payment)
         val paymentId = requireNotNull(saved.id)
         return if (blockers.isEmpty) {

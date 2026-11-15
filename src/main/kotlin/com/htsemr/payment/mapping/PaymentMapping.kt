@@ -25,7 +25,7 @@ internal fun PaymentLine.toPaymentLineView() = PaymentLineView(
     method = method,
     status = status,
     receivedAmount = receivedAmount,
-    appliedAmount = appliedAmount,
+    amount = amount,
     change = change,
     receivedAt = receivedAt,
 )
