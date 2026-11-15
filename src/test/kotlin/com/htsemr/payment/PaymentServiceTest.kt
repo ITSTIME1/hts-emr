@@ -363,8 +363,6 @@ internal class PaymentServiceTest @Autowired constructor(
         }
     }
 
-    // ===== 도우미 =====
-
     /** 시나리오 산정을 두 번에 나눠 다 낸다(20,000 + 9,300). 완료된 수납 건 id를 돌려준다. */
     private fun payFully(): Long {
         paymentService.receiveCash(INVOICE_ID, COUNTER_ID, CASHIER_NO, Money(20_000), Money(20_000))
