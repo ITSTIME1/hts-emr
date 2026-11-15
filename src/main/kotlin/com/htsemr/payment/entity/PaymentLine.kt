@@ -25,7 +25,7 @@ internal class PaymentLine private constructor(
     val method: PaymentMethod,
 
     @Column(nullable = false) val receivedAmount: Money,
-    @Column(nullable = false) val appliedAmount: Money,
+    @Column(nullable = false) val amount: Money,
     @Column(nullable = false) val receivedAt: LocalDateTime,
 ) {
     @Id
@@ -39,14 +39,14 @@ internal class PaymentLine private constructor(
         protected set
 
     /** 거스름돈. 저장하지 않고 계산한다(V7 ck_payment_line_received가 음수를 막는다). */
-    val change: Money get() = receivedAmount - appliedAmount
+    val change: Money get() = receivedAmount - amount
 
     companion object {
-        /** 현금 수령(T-PLN-12). 받은 금액은 수납 반영 금액보다 작을 수 없다(거스름돈 ≥ 0). */
-        fun cash(received: Money, applied: Money, receivedAt: LocalDateTime): PaymentLine {
-            require(applied > Money.ZERO) { "수납 반영 금액은 0보다 커야 합니다: ${applied.amount}" }
-            require(received >= applied) { "받은 금액(${received.amount})이 수납 반영 금액(${applied.amount})보다 작습니다" }
-            return PaymentLine(PaymentMethod.CASH, received, applied, receivedAt)
+        /** 현금 수령(T-PLN-12). 받은 금액은 결제 금액보다 작을 수 없다(거스름돈 ≥ 0). */
+        fun cash(received: Money, amount: Money, receivedAt: LocalDateTime): PaymentLine {
+            require(amount > Money.ZERO) { "결제 금액은 0보다 커야 합니다: ${amount.amount}" }
+            require(received >= amount) { "받은 금액(${received.amount})이 결제 금액(${amount.amount})보다 작습니다" }
+            return PaymentLine(PaymentMethod.CASH, received, amount, receivedAt)
         }
     }
 }
