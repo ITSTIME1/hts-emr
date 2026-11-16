@@ -37,15 +37,6 @@ import org.springframework.transaction.support.TransactionTemplate
 import java.time.LocalDate
 import java.time.LocalDateTime
 
-/**
- * 산정 요청(requestInvoice), 현금 수납(receiveCash), 수납 건 조회(payment) 테스트.
- *
- * 수납 건 하나의 규칙(A-20, 완료 조건)은 PaymentTest가 DB 없이 확인한다. 여기서는 다른 모듈의 조회 결과와 이어지는지,
- * 저장·조회와 트랜잭션(특히 완료가 막혀도 받은 현금이 남는지)이 기대대로 동작하는지 본다.
- *
- * 다른 모듈(reception, order, billing, master)은 대역으로 채운다. 서비스가 자기 트랜잭션을 커밋하므로
- * 클래스에 @Transactional을 붙이지 않고, 테스트마다 직접 지운다(OrderServiceTest, BillingServiceTest와 같은 이유).
- */
 @ApplicationModuleTest
 @Import(TestcontainersConfiguration::class)
 internal class PaymentServiceTest @Autowired constructor(
@@ -61,11 +52,6 @@ internal class PaymentServiceTest @Autowired constructor(
     @MockitoBean private lateinit var invoiceQueryService: InvoiceQueryService
     @MockitoBean private lateinit var counterQueryService: CounterQueryService
 
-    /**
-     * 기본 응답: 내원 건 하나, 오더 항목 셋(시나리오 2: 501 진찰료 EXECUTED, 502 혈액검사 ORDERED, 503 진단서 ORDERED),
-     * 그 셋으로 만든 산정(낼 돈 29,300원), 창구 하나, 셋 다 효력 있는 지금 상태.
-     * 다른 응답이 필요한 테스트만 덮어쓴다.
-     */
     @BeforeEach
     fun stubOtherModules() {
         given(visitQueryService.visit(VISIT_ID))
@@ -79,7 +65,6 @@ internal class PaymentServiceTest @Autowired constructor(
         )
     }
 
-    /** 결제와 항목은 수납 건의 cascade로 함께 지워진다. */
     @AfterEach
     fun cleanUp() {
         transactionTemplate.executeWithoutResult { paymentRepository.deleteAll() }
@@ -90,57 +75,23 @@ internal class PaymentServiceTest @Autowired constructor(
 
         @Test
         fun `효력 있고 수납하지 않은 항목으로 billing에 산정을 요청하고 산정 id를 돌려준다`() {
-            // then: 반환값 INVOICE_ID, then(billingService).should().calculate(VISIT_ID, scenarioTargets())
             val invoiceId = paymentService.requestInvoice(visitId = VISIT_ID)
             assertThat(invoiceId).isEqualTo(INVOICE_ID)
         }
 
         @Test
         fun `효력 없는 항목은 빼고 요청한다`() {
-            /**
-             * effectiveItems는 filter 조건에 it.status.isEffective 필터링해서 집합을 만든다.
-             * 그래서 유효하지 않은 상태값(CANCELLED, CANCEL_REQUESTED, EXPIRED)은 제외하고 ORDERED, EXECUTED만 남기게 된다.
-             * 그러므로, scenarioItems() 메소드에 임시 데이터에 item()을 호출해 위 3가지 데이터 타입이 존재한다면,
-             * 산정을 요청하고, billing..calculate()에 넘어가는 인자는 OrderItemStatus의 isEffective = true인 항목만 선별해서 넘어간다.
-             *
-             */
             given(orderItemQueryService.itemsOfVisit(VISIT_ID))
                 .willReturn(scenarioItems() + item(504, FEE_CERT, 1, OrderItemStatus.CANCELLED) + item(505, FEE_CERT, 1, OrderItemStatus.CANCEL_REQUESTED) + item(506, FEE_CERT, 1, OrderItemStatus.EXPIRED))
 
             val invoiceId = paymentService.requestInvoice(visitId = VISIT_ID)
 
-
             assertThat(invoiceId).isEqualTo(INVOICE_ID)
             then(billingService).should().calculate(VISIT_ID, scenarioTargets())
         }
 
-
-        /**
-         * 실제 잡아내는지 확인하는 테스트. 돌려보고 다시 주석 처리 Actual과 Wanted가 서로 다르고 잡아내는 BillingTarget이 있다면 확인.
-         */
-//        @Test
-//        fun `효력 없는 항목을 빼고 요청했을 때 의도적으로 실패해서 넘어간 인자를 확인한다`() {
-//            /**
-//             * effectiveItems는 filter 조건에 it.status.isEffective 필터링해서 집합을 만든다.
-//             * 그래서 유효하지 않은 상태값(CANCELLED, CANCEL_REQUESTED, EXPIRED)은 제외하고 ORDERED, EXECUTED만 남기게 된다.
-//             * 그러므로, scenarioItems() 메소드에 임시 데이터에 item()을 호출해 위 3가지 데이터 타입이 존재한다면,
-//             * 산정을 요청하고, billing..calculate()에 넘어가는 인자는 OrderItemStatus의 isEffective = true인 항목만 선별해서 넘어간다.
-//             *
-//             */
-//            given(orderItemQueryService.itemsOfVisit(VISIT_ID))
-//                .willReturn(scenarioItems() + item(504, FEE_CERT, 1, OrderItemStatus.CANCELLED) + item(505, FEE_CERT, 1, OrderItemStatus.CANCEL_REQUESTED) + item(506, FEE_CERT, 1, OrderItemStatus.EXPIRED))
-//
-//            val invoiceId = paymentService.requestInvoice(visitId = VISIT_ID)
-//
-//
-//            assertThat(invoiceId).isEqualTo(INVOICE_ID)
-//            then(billingService).should().calculate(VISIT_ID, scenarioTargets() + BillingTarget(orderItemId = 504, feeItemId = FEE_CERT, quantity = 1))
-//        }
-
-
         @Test
         fun `완료된 수납 건에 들어 있는 항목은 빼고 요청한다`() {
-            // 501~503은 이미 수납을 마쳤고, 그 뒤 의사가 혈액검사 505를 추가로 냈다(A-02).
             payFully()
             val newTarget = BillingTarget(505, FEE_BLOOD, 1)
             given(orderItemQueryService.itemsOfVisit(VISIT_ID))
@@ -155,7 +106,6 @@ internal class PaymentServiceTest @Autowired constructor(
 
         @Test
         fun `진행 중인 수납 건의 항목은 다시 산정할 수 있다`() {
-            // INV-03은 완료된 수납 건만 따지므로 정상 동작이다. 두 번 완료되는 것은 receiveCash의 완료 단계가 막는다.
             paymentService.receiveCash(INVOICE_ID, COUNTER_ID, CASHIER_NO, Money(20_000), Money(20_000))
             given(billingService.calculate(VISIT_ID, scenarioTargets())).willReturn(SECOND_INVOICE_ID)
 
@@ -240,7 +190,7 @@ internal class PaymentServiceTest @Autowired constructor(
 
             val view = paymentQueryService.payment(result.paymentId)
             assertThat(view.status).isEqualTo(PaymentStatus.COMPLETED)
-            assertThat(view.completedAt).isNotNull() // 완료면 not null 이어야 하는 제약이 있으니까. (완료시각에 대한 증거)
+            assertThat(view.completedAt).isNotNull()
             assertThat(view.paidAmount).isEqualTo(Money(29_300))
             assertThat(view.lines.map { it.change }).containsExactly(Money.ZERO, Money(700))
         }
@@ -249,7 +199,6 @@ internal class PaymentServiceTest @Autowired constructor(
         fun `결제 합계가 낼 돈을 넘으면 거부하고 그 결제는 남지 않는다`() {
             val first = paymentService.receiveCash(INVOICE_ID, COUNTER_ID, CASHIER_NO, Money(20_000), Money(20_000))
 
-            // 20,000 + 9,301 = 29,301 > 29,300 (경계에서 1원 넘음)
             val exception = assertThrows<PaymentAmountExceededException> {
                 paymentService.receiveCash(INVOICE_ID, COUNTER_ID, CASHIER_NO, Money(10_000), Money(9_301))
             }
@@ -263,10 +212,7 @@ internal class PaymentServiceTest @Autowired constructor(
 
         @Test
         fun `완료 직전에 항목이 취소됐으면 완료하지 않고 받은 결제는 남긴다`() {
-            // 이 슬라이스에서 가장 중요한 테스트다. 예외로 알렸다면 마지막 결제 기록이 롤백되어 사라진다(payment.md 7절).
-            // 변이 확인: 서비스가 이 경우 예외를 던지도록 바꾸면 이 테스트가 실패해야 한다.
             val first = paymentService.receiveCash(INVOICE_ID, COUNTER_ID, CASHIER_NO, Money(20_000), Money(20_000))
-            // 두 결제 사이에 의사가 혈액검사(502)를 취소했다.
             given(orderItemQueryService.statusesOf(listOf(501L, 502L, 503L))).willReturn(
                 mapOf(501L to OrderItemStatus.EXECUTED, 502L to OrderItemStatus.CANCELLED, 503L to OrderItemStatus.ORDERED)
             )
@@ -279,16 +225,12 @@ internal class PaymentServiceTest @Autowired constructor(
             val view = paymentQueryService.payment(first.paymentId)
             assertThat(view.status).isEqualTo(PaymentStatus.IN_PROGRESS)
             assertThat(view.completedAt).isNull()
-            assertThat(view.lines).hasSize(2)   // 마지막 결제도 저장됐다
+            assertThat(view.lines).hasSize(2)
             assertThat(view.paidAmount).isEqualTo(Money(29_300))
         }
 
         @Test
         fun `같은 항목이 다른 수납 건으로 이미 완료됐으면 완료하지 않고 받은 결제는 남긴다`() {
-            // T-PAY-03의 조건 "포함할 항목이 다른 완료된 수납 건에 없다"(INV-03)를 순서대로 부른 경우에 확인한다.
-            // 동시에 완료를 시도하는 경우(C-03)는 이 확인으로 막히지 않고 DB 유일 인덱스가 막는다(ADR-0003, PaymentConcurrencyTest).
-            //
-            // 산정 2는 수납 건 #1이 진행 중일 때 같은 항목(501~503)으로 만들어졌다(진행 중인 항목도 다시 산정할 수 있다).
             given(invoiceQueryService.invoice(SECOND_INVOICE_ID)).willReturn(scenarioInvoice().copy(id = SECOND_INVOICE_ID))
             val completedId = payFully()
 
@@ -303,17 +245,14 @@ internal class PaymentServiceTest @Autowired constructor(
             val blocked = paymentQueryService.payment(result.paymentId)
             assertThat(blocked.status).isEqualTo(PaymentStatus.IN_PROGRESS)
             assertThat(blocked.completedAt).isNull()
-            assertThat(blocked.lines).hasSize(1)   // 받은 29,300원 기록은 남았다
+            assertThat(blocked.lines).hasSize(1)
             assertThat(paymentQueryService.payment(completedId).status).isEqualTo(PaymentStatus.COMPLETED)
         }
 
         @Test
         fun `완료된 산정으로 다시 결제하면 거부한다`() {
-            // T-PAY-01의 조건 "해당 산정을 근거로 한 다른 수납 건이 없다"(A-22, INV-05)를 순서대로 부른 경우에 확인한다.
-            // 변이 확인: 서비스의 existsByInvoiceId 줄을 지우면 이 테스트가 실패해야 한다.
             val completedId = payFully()
 
-            // 1,000원은 확인이 없었다면 새 수납 건으로 아무 문제 없이 받아졌을 금액이다. 실패 원인을 "거부 안 함" 하나로 좁힌다.
             val exception = assertThrows<InvoiceAlreadyUsedException> {
                 paymentService.receiveCash(INVOICE_ID, COUNTER_ID, CASHIER_NO, Money(1_000), Money(1_000))
             }
@@ -323,7 +262,6 @@ internal class PaymentServiceTest @Autowired constructor(
             val view = paymentQueryService.payment(completedId)
             assertThat(view.status).isEqualTo(PaymentStatus.COMPLETED)
             assertThat(view.lines).hasSize(2)
-            // 산정을 조회하기 전에 거부했다. 산정 조회는 payFully의 첫 호출에서 한 번뿐이다.
             then(invoiceQueryService).should(times(1)).invoice(INVOICE_ID)
         }
 
@@ -363,7 +301,6 @@ internal class PaymentServiceTest @Autowired constructor(
         }
     }
 
-    /** 시나리오 산정을 두 번에 나눠 다 낸다(20,000 + 9,300). 완료된 수납 건 id를 돌려준다. */
     private fun payFully(): Long {
         paymentService.receiveCash(INVOICE_ID, COUNTER_ID, CASHIER_NO, Money(20_000), Money(20_000))
         return paymentService.receiveCash(INVOICE_ID, COUNTER_ID, CASHIER_NO, Money(10_000), Money(9_300)).paymentId
@@ -385,7 +322,6 @@ internal class PaymentServiceTest @Autowired constructor(
         BillingTarget(503, FEE_CERT, 1),
     )
 
-    /** billing 시나리오 2의 산정. payment가 쓰는 값은 id, 내원 건, 본인부담 합계, 내역의 오더 항목이다. */
     private fun scenarioInvoice() = InvoiceView(
         id = INVOICE_ID, visitId = VISIT_ID, eligibilitySeq = 1,
         insuranceType = InsuranceType.NATIONAL_HEALTH, copayRate = 30,

@@ -15,7 +15,6 @@ internal class PaymentQueryServiceImpl(
     private val paymentRepository: PaymentRepository,
 ) : PaymentQueryService {
 
-    /** 결제와 항목은 지연 로딩이므로, 트랜잭션 안에서 공개 타입으로 바꿔 돌려준다. */
     override fun payment(paymentId: Long): PaymentView =
         (paymentRepository.findByIdOrNull(paymentId) ?: throw PaymentNotFoundException(paymentId)).toPaymentView()
 }

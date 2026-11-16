@@ -34,15 +34,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
 import java.time.LocalDate
 import java.time.LocalDateTime
 
-/**
- * 산정(calculate)과 산정 조회(invoice) 테스트.
- *
- * 계산 규칙(끝전, 일반 자격)은 InvoiceTest가 DB 없이 확인한다. 여기서는 그 계산이
- * 다른 모듈의 조회 결과와 제대로 이어지고, 저장·조회·롤백·DB 제약이 기대대로 동작하는지 본다.
- *
- * 다른 모듈의 공개 조회(reception, master)는 대역으로 채운다.
- * 서비스가 자기 트랜잭션을 커밋하므로 클래스에 @Transactional을 붙이지 않고, 테스트마다 직접 지운다(OrderServiceTest와 같은 이유).
- */
 @ApplicationModuleTest
 @Import(TestcontainersConfiguration::class)
 internal class BillingServiceTest @Autowired constructor(
@@ -62,10 +53,6 @@ internal class BillingServiceTest @Autowired constructor(
     @MockitoBean
     private lateinit var feeQueryService: FeeQueryService
 
-    /**
-     * 기본 응답: 내원 건 하나, 건강보험 30% 자격, 수가 항목 셋(시나리오 2의 단가).
-     * 다른 응답이 필요한 테스트만 덮어쓴다.
-     */
     @BeforeEach
     fun stubOtherModules() {
         given(visitQueryService.visit(VISIT_ID))
@@ -78,7 +65,6 @@ internal class BillingServiceTest @Autowired constructor(
         stubFee(FEE_CERT, "진단서", CoverageType.NON_COVERED, 20_000)
     }
 
-    /** 외래 키 방향(내역 → 산정)의 반대 순서로 지운다. */
     @AfterEach
     fun cleanUp() {
         invoiceLineRepository.deleteAll()
@@ -98,8 +84,6 @@ internal class BillingServiceTest @Autowired constructor(
             )
 
             val invoiceId : Long = billingService.calculate(visitId = VISIT_ID, targets = scenarioTargets())
-
-            // when: calculate → invoice(id)
 
             val invoice : Invoice = invoiceRepository.findById(invoiceId).get()
 
@@ -125,10 +109,8 @@ internal class BillingServiceTest @Autowired constructor(
 
             val invoiceLine : List<InvoiceLine> = invoiceLineRepository.findAllByInvoiceIdOrderById(invoiceId)
 
-            // Pair<List<CoveredInvoiceLine>, List<NonCoveredInvoiceLine>>
             val (coveredLines, nonCoveredLines) = invoiceLine.partition { it.coverageType == CoverageType.COVERED }
 
-            // 급여합과 비급여합을 각각 합산한다.
             val coveredLineTotalAmounts = coveredLines.fold(Money.ZERO) { sum, line -> sum + line.lineTotal }
             val nonCoveredLineTotalAmounts = nonCoveredLines.fold(Money.ZERO) { sum, line -> sum + line.lineTotal }
 
@@ -138,8 +120,6 @@ internal class BillingServiceTest @Autowired constructor(
 
         @Test
         fun `내역을 대상 순서대로 저장하고 단가와 총액을 값으로 남긴다`() {
-            // then: lines의 orderItemId가 [ORDER_ITEM_1, ORDER_ITEM_2, ORDER_ITEM_3] 순서
-            //       둘째 내역: unitPrice 4,483 / quantity 3 / lineTotal 13,449 / coverageType COVERED
             fun scenarioTargets() = listOf(
                 BillingTarget(orderItemId = ORDER_ITEM_1, feeItemId = FEE_CONSULT, quantity = 1),
                 BillingTarget(orderItemId = ORDER_ITEM_2, feeItemId = FEE_BLOOD, quantity = 3),
@@ -158,8 +138,6 @@ internal class BillingServiceTest @Autowired constructor(
 
         @Test
         fun `계산에 쓴 자격을 산정에 복사한다`() {
-            // given: 자격 seq 2로 덮어쓴다
-            // then: visitId, eligibilitySeq 2, insuranceType, copayRate 30
             fun scenarioTargets() = listOf(
                 BillingTarget(orderItemId = ORDER_ITEM_1, feeItemId = FEE_CONSULT, quantity = 1),
                 BillingTarget(orderItemId = ORDER_ITEM_2, feeItemId = FEE_BLOOD, quantity = 3),
@@ -171,12 +149,9 @@ internal class BillingServiceTest @Autowired constructor(
 
             assertThat(firstInvoice.eligibilitySeq).isEqualTo(1)
 
-            // 자격을 변경해주고
             given(eligibilityQueryService.currentEligibility(VISIT_ID))
                 .willReturn(eligibility(insuranceType = InsuranceType.NATIONAL_HEALTH, seq = 2, copayRate = 30))
 
-
-            // 계산을 다시해서 mockitobean을 부른 다음 Eli..View를 리턴하면 그 값을 invoice에 저장해서, 다시 조회하면 자격이 변동된게 적용된 것을 알 수 있음.
             val secondInvoiceId : Long = billingService.calculate(visitId = VISIT_ID, targets = scenarioTargets())
             val secondInvoice : Invoice = invoiceRepository.findById(secondInvoiceId).get()
 
@@ -188,14 +163,12 @@ internal class BillingServiceTest @Autowired constructor(
             val invoiceId = billingService.calculate(VISIT_ID, scenarioTargets())
             val before = invoiceQueryService.invoice(invoiceId)
 
-            // 산정 뒤 단가가 오르고(A-06의 새 적용 시작일), 자격이 새로 기록됐다(A-03)고 가정한다.
             given(feeQueryService.priceOn(FEE_CONSULT, VISIT_DATE)).willReturn(Money(20_000))
             given(eligibilityQueryService.currentEligibility(VISIT_ID))
                 .willReturn(eligibility(InsuranceType.NATIONAL_HEALTH, copayRate = 60, seq = 2))
 
             val after = invoiceQueryService.invoice(invoiceId)
 
-            // data class라 모든 필드(내역 포함)를 한 번에 비교한다.
             assertThat(after).isEqualTo(before)
             assertThat(after.eligibilitySeq).isEqualTo(1)
             assertThat(after.lines.first().unitPrice).isEqualTo(Money(17_619))
@@ -210,7 +183,7 @@ internal class BillingServiceTest @Autowired constructor(
 
             assertThat(invoice.insuranceType).isEqualTo(InsuranceType.UNINSURED)
             assertThat(invoice.coveredLineSum).isEqualTo(Money(31_068))
-            assertThat(invoice.coveredTotal).isEqualTo(Money(31_068))     // 10원 미만을 버리지 않는다(A-31)
+            assertThat(invoice.coveredTotal).isEqualTo(Money(31_068))
             assertThat(invoice.coveredCopay).isEqualTo(Money(31_068))
             assertThat(invoice.insurerAmount).isEqualTo(Money.ZERO)
             assertThat(invoice.nonCoveredTotal).isEqualTo(Money(20_000))
@@ -220,7 +193,6 @@ internal class BillingServiceTest @Autowired constructor(
 
     @Nested
     inner class `산정을 거부하면 아무것도 남지 않는다` {
-
 
         @Test
         fun `내원 건이 없을 때`() {
@@ -245,15 +217,12 @@ internal class BillingServiceTest @Autowired constructor(
 
         @Test
         fun `진료일에 유효한 단가가 없을 때`() {
-            // given: 셋째 대상의 priceOn이 FeePriceNotFoundException을 던지게 한다
-            //        앞의 두 대상은 조회에 성공한 뒤라도 아무것도 저장되지 않아야 한다
             given(feeQueryService.priceOn(feeItemId = FEE_CERT, visitDate = VISIT_DATE)).willThrow(FeePriceNotFoundException(feeItemId = FEE_CERT, visitDate = VISIT_DATE))
 
             val exception = assertThrows<FeePriceNotFoundException> {
                 billingService.calculate(VISIT_ID, scenarioTargets())
             }
 
-            // 예외가 반환한 수가id가 given()에서 설정한 수가id와 동일해야한다.
             assertThat(exception.feeItemId).isEqualTo(FEE_CERT)
             assertNothingSaved()
         }
@@ -279,7 +248,7 @@ internal class BillingServiceTest @Autowired constructor(
             fun scenarioTargets() = listOf(
                 BillingTarget(orderItemId = ORDER_ITEM_1, feeItemId = FEE_CONSULT, quantity = 1),
                 BillingTarget(orderItemId = ORDER_ITEM_2, feeItemId = FEE_BLOOD, quantity = 3),
-                BillingTarget(orderItemId = ORDER_ITEM_2, feeItemId = FEE_BLOOD, quantity = 0), // 수량은 1이상이어야 하지만, 1미만으로 설정
+                BillingTarget(orderItemId = ORDER_ITEM_2, feeItemId = FEE_BLOOD, quantity = 0),
             )
 
             val exception = assertThrows<IllegalArgumentException> {
@@ -331,7 +300,6 @@ internal class BillingServiceTest @Autowired constructor(
 
         @Test
         fun `공단부담이 총액에서 본인부담을 뺀 값이 아니면 거부한다`() {
-            // 31,060 − 9,300 = 21,760 이어야 하는데 1원 많다.
             val exception = assertThrows<DataIntegrityViolationException> {
                 insertInvoice(insurerAmount = 21_761)
             }
@@ -341,8 +309,6 @@ internal class BillingServiceTest @Autowired constructor(
 
         @Test
         fun `일반 자격인데 공단부담이 있으면 거부한다`() {
-            // ck_invoice_uninsured
-            // 일반 자격은 공단부담이 0이어야 한다(A-31). 다른 제약은 모두 통과시키고 공단부담만 68원으로 둔다.
             val exception = assertThrows<DataIntegrityViolationException> {
                 insertInvoice(
                     insuranceType = "UNINSURED",
@@ -350,7 +316,7 @@ internal class BillingServiceTest @Autowired constructor(
                     coveredLineSum = 31_068,
                     coveredTotal = 31_068,
                     coveredCopay = 31_000,
-                    insurerAmount = 68, // 공단 부담이 없어야 됨
+                    insurerAmount = 68,
                     nonCoveredTotal = 20_000,
                     patientAmount = 51_000,
                 )
@@ -363,7 +329,6 @@ internal class BillingServiceTest @Autowired constructor(
         fun `내역 총액이 단가 곱하기 수량이 아니면 거부한다`() {
             val invoiceId = billingService.calculate(VISIT_ID, scenarioTargets())
 
-            // 4,483 × 3 = 13,449 이어야 하는데 1원 많다. 다른 제약(단가 ≥ 0, 수량 ≥ 1, 급여 구분, 산정 안 중복 없음)은 통과
             val exception = assertThrows<DataIntegrityViolationException> {
                 jdbcTemplate.update(
                     """
@@ -387,7 +352,6 @@ internal class BillingServiceTest @Autowired constructor(
     private fun eligibility(insuranceType: InsuranceType, copayRate: Int, seq: Int = 1) =
         EligibilityView(VISIT_ID, seq, insuranceType, copayRate, LocalDateTime.of(2026, 6, 2, 9, 0))
 
-    /** 시나리오 2의 대상: 진찰료 1, 혈액검사 3, 진단서 1. */
     private fun scenarioTargets() = listOf(
         BillingTarget(orderItemId = ORDER_ITEM_1, feeItemId = FEE_CONSULT, quantity = 1),
         BillingTarget(orderItemId = ORDER_ITEM_2, feeItemId = FEE_BLOOD, quantity = 3),
