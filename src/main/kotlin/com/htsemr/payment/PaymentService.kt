@@ -8,8 +8,8 @@ import com.htsemr.reception.VisitNotFoundException
 /**
  * 수납. payment 모듈의 공개 기능이다. 슬라이스 1은 현금 수납의 정상 흐름만 다룬다(payment.md 7절).
  *
- * 동시에 부를 때의 이중 수납 방어는 ADR-0003에서 재현 테스트로 실패를 보인 뒤 넣는다.
- * INV-05(C-06)는 DB 유일 제약으로 막았고, INV-03(C-03)은 아직 없다.
+ * 동시에 부를 때의 이중 수납 방어는 재현 테스트로 실패를 먼저 보이고 ADR-0003에서 골라 넣었다.
+ * INV-05(C-06)와 INV-03(C-03)은 DB 제약으로 막는다. INV-04(C-04)는 ADR-0002 뒤로 미뤘다.
  */
 interface PaymentService {
 
@@ -40,6 +40,7 @@ interface PaymentService {
      * @throws PaymentAmountExceededException 결제 합계가 본인부담 합계를 넘을 때(A-20)
      * @throws InvoiceAlreadyUsedException 그 산정으로 만든 수납 건이 이미 끝났을 때(A-22)
      * @throws PaymentStartConflictException 다른 창구가 같은 산정으로 같은 순간에 수납 건을 먼저 만들었을 때(C-06). 다시 시도하면 된다.
+     * @throws PaymentCompletionConflictException 같은 항목을 가진 다른 수납 건이 같은 순간에 먼저 완료했을 때(C-03). 이 결제는 저장되지 않는다.
      * @throws InvoiceNotFoundException 산정이 없을 때
      * @throws CounterNotFoundException 창구가 없을 때
      */

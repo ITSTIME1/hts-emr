@@ -128,6 +128,8 @@ internal class Payment private constructor(
 
         status = PaymentStatus.COMPLETED
         this.completedAt = completedAt
+        // 항목에도 완료를 표시한다. 같은 순간 다른 수납 건이 같은 항목을 완료하면 DB가 막는다(V10, C-03).
+        itemEntities.forEach { it.markCompleted() }
         return blockers
     }
 

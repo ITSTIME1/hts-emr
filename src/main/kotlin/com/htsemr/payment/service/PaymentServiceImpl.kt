@@ -9,6 +9,7 @@ import com.htsemr.order.OrderItemQueryService
 import com.htsemr.payment.CashResult
 import com.htsemr.payment.InvoiceAlreadyUsedException
 import com.htsemr.payment.NothingToPayException
+import com.htsemr.payment.PaymentCompletionConflictException
 import com.htsemr.payment.PaymentService
 import com.htsemr.payment.PaymentStartConflictException
 import com.htsemr.payment.PaymentStatus
@@ -27,10 +28,12 @@ import java.time.LocalDateTime
  * 서비스는 다른 모듈에서 재료를 모아 오고, 규칙은 Payment가 지킨다.
  * - 결제 합계 ≤ 본인부담 합계(A-20): Payment.receiveCash
  * - 완료 직전 항목 효력(INV-04): 서비스가 order에서 상태를 가져오고, Payment.complete가 판단
- * - 완료 직전 다른 수납 건과의 중복(INV-03): 서비스가 리포지토리로 찾고, Payment.complete가 판단
+ * - 완료 직전 다른 수납 건과의 중복(INV-03): 서비스가 리포지토리로 찾고, Payment.complete가 판단. 동시에 부를 때는 DB 유일 인덱스(V10)가 막는다
  * - 산정 하나에 수납 건 하나(INV-05): 수납 건을 새로 만들기 전에 서비스가 확인하고, 동시에 부를 때는 DB 유일 제약(V9)이 막는다
  *
- * 그 밖의 동시 호출 방어(C-03)는 아직 없다(payment.md 7절, ADR-0003). 틈이 있는 곳에는 주석으로 표시했다.
+ * 동시에 부를 때의 방어는 DB 제약이 맡는다(ADR-0003). 서비스의 확인은 순서대로 올 때를 위한 것이고,
+ * 확인과 커밋 사이에 끼어든 호출은 제약이 막는다. 그 위반을 도메인 예외로 바꾸는 곳이 아래 save다.
+ * 완료와 오더 취소가 겹치는 경우(C-04, INV-04)는 order 쪽 확인이 먼저 필요해 ADR-0002 뒤로 미뤘다.
  */
 @Service
 @Transactional
@@ -103,7 +106,8 @@ internal class PaymentServiceImpl(
         // 4. 여기까지 왔으면 다 냈다. 완료 조건(T-PAY-03)의 재료를 모아 완료를 시도한다. 판단은 Payment.complete가 한다.
         //    - 항목의 지금 상태: order에 묻는다(INV-04).
         //    - 다른 완료된 수납 건에 이미 들어 있는 항목: 이 수납 건은 다른 수납 건을 볼 수 없으므로 여기서 찾는다(INV-03).
-        //    틈: 두 수납 건이 같은 순간에 완료하면 둘 다 "없다"를 보고 둘 다 완료한다(C-03, ADR-0003).
+        //    두 수납 건이 같은 순간에 완료하면 둘 다 "없다"를 보고 둘 다 완료하려 한다(C-03).
+        //    이 확인으로는 못 막고, 완료된 항목의 유일 인덱스(V10)가 뒤쪽을 실패시킨다(PaymentCompletionConflictException).
         val statuses = orderItemQueryService.statusesOf(payment.orderItemIds)
         val alreadyPaidItemIds =
             paymentRepository.findOrderItemIdsIn(payment.orderItemIds, PaymentStatus.COMPLETED).toSet()
@@ -119,18 +123,21 @@ internal class PaymentServiceImpl(
     }
 
     /**
-     * 수납 건을 저장한다. 새 수납 건이 같은 산정의 유일 제약(V9)에 걸리면 [PaymentStartConflictException]으로 바꾼다.
+     * 수납 건을 저장하고 바로 DB에 반영한다(flush). 동시에 온 다른 호출과 겹친 제약 위반을 도메인 예외로 바꾼다.
+     * - 같은 산정의 수납 건이 먼저 생겼다(V9, C-06) → [PaymentStartConflictException]
+     * - 같은 항목을 가진 다른 수납 건이 먼저 완료했다(V10, C-03) → [PaymentCompletionConflictException]
      *
-     * 새 수납 건은 save에서 바로 insert된다(IDENTITY). 다른 창구가 같은 산정으로 먼저 insert했다면,
-     * 그 트랜잭션이 끝날 때까지 기다렸다가 커밋되면 여기서 제약 위반이 난다(C-06).
-     * 다른 제약 위반은 이 경우가 아니므로 그대로 던진다.
+     * 뒤쪽은 앞쪽 트랜잭션이 끝날 때까지 기다렸다가, 앞쪽이 커밋되면 여기서 제약 위반을 받는다.
+     * 바로 flush하는 이유: 완료 표시(UPDATE)는 그냥 두면 커밋할 때 반영되어, 위반이 이 메서드 밖(트랜잭션 커밋)에서 난다.
+     * 그러면 서비스가 잡아서 바꿀 수 없다. 다른 제약 위반은 이 경우들이 아니므로 그대로 던진다.
      */
     private fun save(payment: Payment): Payment {
         val isNew = payment.id == null
         try {
-            return paymentRepository.save(payment)
+            return paymentRepository.saveAndFlush(payment)
         } catch (e: DataIntegrityViolationException) {
             if (isNew && e.violates(INVOICE_UNIQUE_CONSTRAINT)) throw PaymentStartConflictException(payment.invoiceId)
+            if (e.violates(COMPLETED_ITEM_UNIQUE_INDEX)) throw PaymentCompletionConflictException(payment.invoiceId)
             throw e
         }
     }
@@ -144,5 +151,8 @@ internal class PaymentServiceImpl(
     private companion object {
         /** payment.invoice_id 유일 제약(V9). 한 산정에 수납 건 하나(INV-05). */
         const val INVOICE_UNIQUE_CONSTRAINT = "UK_PAYMENT_INVOICE"
+
+        /** payment_item의 완료된 항목 유일 인덱스(V10). 오더 항목은 완료된 수납 건 하나에만(INV-03). */
+        const val COMPLETED_ITEM_UNIQUE_INDEX = "UK_PAYMENT_ITEM_COMPLETED"
     }
 }
