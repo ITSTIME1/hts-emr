@@ -25,9 +25,9 @@ import java.time.LocalDateTime
  * - 결제 합계 ≤ 본인부담 합계(A-20): Payment.receiveCash
  * - 완료 직전 항목 효력(INV-04): 서비스가 order에서 상태를 가져오고, Payment.complete가 판단
  * - 완료 직전 다른 수납 건과의 중복(INV-03): 서비스가 리포지토리로 찾고, Payment.complete가 판단
- * - 산정 하나에 수납 건 하나(INV-05): 수납 건을 새로 만들기 전에 서비스가 확인
+ * - 산정 하나에 수납 건 하나(INV-05): 수납 건을 새로 만들기 전에 서비스가 확인하고, 동시에 부를 때는 DB 유일 제약(V9)이 막는다
  *
- * 동시에 부를 때의 이중 수납 방어는 일부러 없다(payment.md 7절, ADR-0003). 틈이 있는 곳에는 주석으로 표시했다.
+ * 그 밖의 동시 호출 방어(C-03)는 아직 없다(payment.md 7절, ADR-0003). 틈이 있는 곳에는 주석으로 표시했다.
  */
 @Service
 @Transactional
@@ -73,7 +73,8 @@ internal class PaymentServiceImpl(
         //        한 산정으로는 수납 건 하나다(A-22, INV-05). 다시 받으려면 새로 산정해야 한다.
         //        슬라이스 1에서 (나)는 COMPLETED뿐이다. REJECTED, HELD는 거부·보류를 만들 때 생긴다.
         //    산정 자체가 없으면(잘못된 번호) 그다음 invoice 조회에서 InvoiceNotFoundException이 난다.
-        //    틈: 두 창구가 같은 순간에 첫 결제를 받으면 둘 다 (가)를 보고 둘 다 만든다(C-06, ADR-0003).
+        //    두 창구가 같은 순간에 첫 결제를 받으면 둘 다 (가)를 보고 둘 다 만들려 한다(C-06).
+        //    이 확인으로는 못 막고, payment.invoice_id 유일 제약(V9)이 뒤쪽 insert를 실패시킨다.
         val payment = paymentRepository.findByInvoiceIdAndStatus(invoiceId, PaymentStatus.IN_PROGRESS)
             ?: run {
                 if (paymentRepository.existsByInvoiceId(invoiceId)) throw InvoiceAlreadyUsedException(invoiceId)

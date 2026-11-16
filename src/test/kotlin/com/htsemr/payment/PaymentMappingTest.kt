@@ -101,11 +101,12 @@ internal class PaymentMappingTest @Autowired constructor(
     fun `완료된 수납 건에 들어 있는 오더 항목만 고른다`() {
         transactionTemplate.executeWithoutResult {
             // 완료된 수납 건(항목 501~503)과, 진행 중인 수납 건(같은 항목) 하나씩
+            // 한 산정에 수납 건은 하나라(INV-05), 진행 중인 수납 건은 같은 항목을 다시 산정한 다른 산정으로 만든다.
             val completed = Payment.start(invoice(), counterId = 7, cashierNo = "T-C01", startedAt = NOW)
             completed.receiveCash(Money(29_300), Money(29_300), NOW)
             completed.complete(ALL_EFFECTIVE, emptySet(), COMPLETED_AT)
             paymentRepository.save(completed)
-            paymentRepository.save(Payment.start(invoice(), counterId = 7, cashierNo = "T-C02", startedAt = NOW))
+            paymentRepository.save(Payment.start(invoice(id = 2), counterId = 7, cashierNo = "T-C02", startedAt = NOW))
         }
 
         val paid = paymentRepository.findOrderItemIdsIn(listOf(501L, 503L, 999L), PaymentStatus.COMPLETED)
@@ -113,8 +114,8 @@ internal class PaymentMappingTest @Autowired constructor(
         assertThat(paid).containsExactlyInAnyOrder(501L, 503L)
     }
 
-    private fun invoice() = InvoiceView(
-        id = INVOICE_ID, visitId = 1000, eligibilitySeq = 1,
+    private fun invoice(id: Long = INVOICE_ID) = InvoiceView(
+        id = id, visitId = 1000, eligibilitySeq = 1,
         insuranceType = InsuranceType.NATIONAL_HEALTH, copayRate = 30,
         coveredLineSum = Money(31_068), coveredTotal = Money(31_060), coveredCopay = Money(9_300),
         insurerAmount = Money(21_760), nonCoveredTotal = Money(20_000), patientAmount = Money(29_300),
