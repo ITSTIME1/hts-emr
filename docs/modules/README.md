@@ -92,7 +92,7 @@ flowchart LR
 | :--- | :--- | :--- | :--- |
 | INV-01 | order | 즉시 | |
 | INV-02 | order ← payment | 미정(ADR-0002) | |
-| INV-03, INV-05 | payment | 미정(ADR-0003) | 같은 모듈 안이지만 서로 다른 수납 건 사이의 경쟁이다. |
+| INV-03, INV-05 | payment | 즉시(ADR-0003) | 같은 모듈 안이지만 서로 다른 수납 건 사이의 경쟁이다. 순서대로 오면 서비스의 확인이, 동시에 오면 DB 제약이 막는다. |
 | INV-04 | payment → order | 미정(ADR-0003) | |
 | INV-06, INV-07 | payment | 즉시 | 경계를 정한 뒤에도 같은 모듈 안이다. |
 | INV-08, INV-09, INV-11 | payment, reconciliation | 사후 검출 | |
