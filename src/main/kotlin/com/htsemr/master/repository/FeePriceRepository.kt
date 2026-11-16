@@ -7,7 +7,6 @@ import java.time.LocalDate
 
 internal interface FeePriceRepository : JpaRepository<FeePrice, Long> {
 
-    /** 그 진료일에 유효한 단가: 적용 시작일이 진료일 이전인 것 가운데 가장 최근 */
     @Query("""
         select p from FeePrice p
         where p.feeItemId = :feeItemId
