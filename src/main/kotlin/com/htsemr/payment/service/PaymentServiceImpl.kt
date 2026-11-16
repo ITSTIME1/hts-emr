@@ -10,10 +10,13 @@ import com.htsemr.payment.CashResult
 import com.htsemr.payment.InvoiceAlreadyUsedException
 import com.htsemr.payment.NothingToPayException
 import com.htsemr.payment.PaymentService
+import com.htsemr.payment.PaymentStartConflictException
 import com.htsemr.payment.PaymentStatus
 import com.htsemr.payment.entity.Payment
 import com.htsemr.payment.repository.PaymentRepository
 import com.htsemr.reception.VisitQueryService
+import org.hibernate.exception.ConstraintViolationException
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -75,6 +78,7 @@ internal class PaymentServiceImpl(
         //    산정 자체가 없으면(잘못된 번호) 그다음 invoice 조회에서 InvoiceNotFoundException이 난다.
         //    두 창구가 같은 순간에 첫 결제를 받으면 둘 다 (가)를 보고 둘 다 만들려 한다(C-06).
         //    이 확인으로는 못 막고, payment.invoice_id 유일 제약(V9)이 뒤쪽 insert를 실패시킨다.
+        //    뒤쪽 창구는 save에서 PaymentStartConflictException을 받는다(아래 save 참고).
         val payment = paymentRepository.findByInvoiceIdAndStatus(invoiceId, PaymentStatus.IN_PROGRESS)
             ?: run {
                 if (paymentRepository.existsByInvoiceId(invoiceId)) throw InvoiceAlreadyUsedException(invoiceId)
@@ -92,7 +96,7 @@ internal class PaymentServiceImpl(
         //    isFullyPaid는 저장된 값이 아니라 부를 때마다 계산하므로, 2에서 붙인 결제까지 반영돼 있다.
         //    새 수납 건이면 save에서 id가 생긴다(IDENTITY).
         if (!payment.isFullyPaid) {
-            val saved = paymentRepository.save(payment)
+            val saved = save(payment)
             return CashResult.InProgress(requireNotNull(saved.id), saved.remaining)
         }
 
@@ -105,12 +109,40 @@ internal class PaymentServiceImpl(
             paymentRepository.findOrderItemIdsIn(payment.orderItemIds, PaymentStatus.COMPLETED).toSet()
         val blockers = payment.complete(statuses, alreadyPaidItemIds, now)
 
-        val saved = paymentRepository.save(payment)
+        val saved = save(payment)
         val paymentId = requireNotNull(saved.id)
         return if (blockers.isEmpty) {
             CashResult.Completed(paymentId)
         } else {
             CashResult.CompletionBlocked(paymentId, blockers.ineffectiveItemIds, blockers.alreadyPaidItemIds)
         }
+    }
+
+    /**
+     * 수납 건을 저장한다. 새 수납 건이 같은 산정의 유일 제약(V9)에 걸리면 [PaymentStartConflictException]으로 바꾼다.
+     *
+     * 새 수납 건은 save에서 바로 insert된다(IDENTITY). 다른 창구가 같은 산정으로 먼저 insert했다면,
+     * 그 트랜잭션이 끝날 때까지 기다렸다가 커밋되면 여기서 제약 위반이 난다(C-06).
+     * 다른 제약 위반은 이 경우가 아니므로 그대로 던진다.
+     */
+    private fun save(payment: Payment): Payment {
+        val isNew = payment.id == null
+        try {
+            return paymentRepository.save(payment)
+        } catch (e: DataIntegrityViolationException) {
+            if (isNew && e.violates(INVOICE_UNIQUE_CONSTRAINT)) throw PaymentStartConflictException(payment.invoiceId)
+            throw e
+        }
+    }
+
+    /** 원인을 따라가며 Hibernate가 알아낸 제약 이름을 찾는다. Oracle은 "스키마.제약" 꼴로 알려 준다. */
+    private fun DataIntegrityViolationException.violates(constraint: String): Boolean =
+        generateSequence<Throwable>(this) { it.cause }
+            .filterIsInstance<ConstraintViolationException>()
+            .any { it.constraintName?.substringAfterLast('.').equals(constraint, ignoreCase = true) }
+
+    private companion object {
+        /** payment.invoice_id 유일 제약(V9). 한 산정에 수납 건 하나(INV-05). */
+        const val INVOICE_UNIQUE_CONSTRAINT = "UK_PAYMENT_INVOICE"
     }
 }
