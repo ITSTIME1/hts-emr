@@ -25,13 +25,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.LocalDateTime
 
-/**
- * 수납 건의 저장 매핑 테스트. 서비스 없이 리포지토리로 저장하고 다시 읽어, 결제와 항목이 함께 저장되는지(cascade)와
- * 리포지토리 조회가 기대대로 동작하는지 본다.
- *
- * 각 단계를 별도 트랜잭션으로 실행한다. 한 트랜잭션 안에서 다시 읽으면 DB가 아니라 영속성 컨텍스트에서 같은 객체가 나와,
- * 저장이 실제로 됐는지 확인할 수 없다.
- */
 @ApplicationModuleTest
 @Import(TestcontainersConfiguration::class)
 internal class PaymentMappingTest @Autowired constructor(
@@ -39,8 +32,6 @@ internal class PaymentMappingTest @Autowired constructor(
     private val transactionTemplate: TransactionTemplate,
 ) {
 
-    // @ApplicationModuleTest는 payment 모듈만 띄운다. 서비스 구현체가 주입받는 다른 모듈의 공개 기능을 대역으로 채운다.
-    // 이 테스트는 리포지토리만 쓰므로 대역의 응답은 설정하지 않는다.
     @MockitoBean private lateinit var visitQueryService: VisitQueryService
     @MockitoBean private lateinit var orderItemQueryService: OrderItemQueryService
     @MockitoBean private lateinit var billingService: BillingService
@@ -49,7 +40,6 @@ internal class PaymentMappingTest @Autowired constructor(
 
     @AfterEach
     fun cleanUp() {
-        // 결제와 항목은 수납 건의 cascade로 함께 지워진다.
         transactionTemplate.executeWithoutResult { paymentRepository.deleteAll() }
     }
 
@@ -100,12 +90,11 @@ internal class PaymentMappingTest @Autowired constructor(
     @Test
     fun `완료된 수납 건에 들어 있는 오더 항목만 고른다`() {
         transactionTemplate.executeWithoutResult {
-            // 완료된 수납 건(항목 501~503)과, 진행 중인 수납 건(같은 항목) 하나씩
             val completed = Payment.start(invoice(), counterId = 7, cashierNo = "T-C01", startedAt = NOW)
             completed.receiveCash(Money(29_300), Money(29_300), NOW)
             completed.complete(ALL_EFFECTIVE, emptySet(), COMPLETED_AT)
             paymentRepository.save(completed)
-            paymentRepository.save(Payment.start(invoice(), counterId = 7, cashierNo = "T-C02", startedAt = NOW))
+            paymentRepository.save(Payment.start(invoice(id = 2), counterId = 7, cashierNo = "T-C02", startedAt = NOW))
         }
 
         val paid = paymentRepository.findOrderItemIdsIn(listOf(501L, 503L, 999L), PaymentStatus.COMPLETED)
@@ -113,8 +102,8 @@ internal class PaymentMappingTest @Autowired constructor(
         assertThat(paid).containsExactlyInAnyOrder(501L, 503L)
     }
 
-    private fun invoice() = InvoiceView(
-        id = INVOICE_ID, visitId = 1000, eligibilitySeq = 1,
+    private fun invoice(id: Long = INVOICE_ID) = InvoiceView(
+        id = id, visitId = 1000, eligibilitySeq = 1,
         insuranceType = InsuranceType.NATIONAL_HEALTH, copayRate = 30,
         coveredLineSum = Money(31_068), coveredTotal = Money(31_060), coveredCopay = Money(9_300),
         insurerAmount = Money(21_760), nonCoveredTotal = Money(20_000), patientAmount = Money(29_300),

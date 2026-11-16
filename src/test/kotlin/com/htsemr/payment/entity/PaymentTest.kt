@@ -16,10 +16,6 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
 import java.time.LocalDateTime
 
-/**
- * 수납 건의 전이(start, receiveCash, complete) 단위 테스트. DB와 Spring 없이 규칙만 본다.
- * 낼 돈은 billing 시나리오 2의 29,300원이다.
- */
 internal class PaymentTest {
 
     @Nested
@@ -65,7 +61,6 @@ internal class PaymentTest {
             val payment = started()
             payment.receiveCash(Money(20_000), Money(20_000), NOW)
 
-            // 20,000 + 9,301 = 29,301 > 29,300 (경계에서 1원 넘음)
             val exception = assertThrows<PaymentAmountExceededException> {
                 payment.receiveCash(Money(10_000), Money(9_301), NOW)
             }
@@ -81,7 +76,6 @@ internal class PaymentTest {
 
         @Test
         fun `받은 금액이 결제 금액보다 작으면 거부한다`() {
-            // 거스름돈이 음수가 되는 경우다.
             assertThrows<IllegalArgumentException> { started().receiveCash(Money(9_000), Money(9_300), NOW) }
         }
 
@@ -119,14 +113,13 @@ internal class PaymentTest {
             assertThat(blockers.alreadyPaidItemIds).isEmpty()
             assertThat(payment.status).isEqualTo(PaymentStatus.IN_PROGRESS)
             assertThat(payment.completedAt).isNull()
-            assertThat(payment.lines).hasSize(2)   // 받은 결제는 그대로다
+            assertThat(payment.lines).hasSize(2)
         }
 
         @Test
         fun `다른 완료된 수납 건에 이미 들어 있는 항목이 있으면 완료하지 않고 그 항목을 알린다`() {
             val payment = fullyPaid()
 
-            // 999는 이 수납 건에 없는 항목이다. 넘겨받아도 이 수납 건의 항목만 골라 알린다.
             val blockers = payment.complete(allEffective(), setOf(501L, 503L, 999L), COMPLETED_AT)
 
             assertThat(blockers.alreadyPaidItemIds).containsExactlyInAnyOrder(501L, 503L)
@@ -169,7 +162,6 @@ internal class PaymentTest {
         503L to OrderItemStatus.ORDERED,
     )
 
-    /** billing 시나리오 2의 산정. payment가 쓰는 값은 id, 내원 건, 본인부담 합계, 내역의 오더 항목뿐이다. */
     private fun invoice() = InvoiceView(
         id = INVOICE_ID, visitId = VISIT_ID, eligibilitySeq = 1,
         insuranceType = InsuranceType.NATIONAL_HEALTH, copayRate = 30,
