@@ -228,6 +228,49 @@ internal class PaymentConcurrencyTest @Autowired constructor(
             .isEqualTo(FULL_PAY * succeeded)
     }
 
+    /**
+     * C-03에서 진 창구가 받는 응답. 완료된 항목의 유일 인덱스(V10)를 고른 뒤의 계약이라 예외 종류를 본다.
+     * 진 창구의 마지막 결제는 저장되지 않고, 다시 시도하면 순서대로 왔을 때와 같이 완료가 막힌 결과를 받는다.
+     */
+    @Test
+    fun `같은 항목의 완료가 겹쳐 진 창구는 결제가 저장되지 않았다는 예외를 받고, 다시 시도하면 완료가 막힌 결과를 받는다`() {
+        given(invoiceQueryService.invoice(INVOICE_ID)).willReturn(scenarioInvoice(INVOICE_ID))
+        given(invoiceQueryService.invoice(OTHER_INVOICE_ID)).willReturn(scenarioInvoice(OTHER_INVOICE_ID))
+        paymentService.receiveCash(INVOICE_ID, COUNTER_ID, "T-C01", Money(20_000), Money(20_000))
+        paymentService.receiveCash(OTHER_INVOICE_ID, COUNTER_ID, "T-C02", Money(20_000), Money(20_000))
+
+        val arrived = CountDownLatch(2)
+        given(orderItemQueryService.statusesOf(anyCollection())).willAnswer {
+            arrived.countDown()
+            arrived.await(2, TimeUnit.SECONDS)
+            ALL_EFFECTIVE
+        }
+
+        val pool = Executors.newFixedThreadPool(2)
+        val futureA = pool.submit<Result<CashResult>> {
+            runCatching { paymentService.receiveCash(INVOICE_ID, COUNTER_ID, "T-C01", LAST_PAY, LAST_PAY) }
+        }
+        val futureB = pool.submit<Result<CashResult>> {
+            runCatching { paymentService.receiveCash(OTHER_INVOICE_ID, COUNTER_ID, "T-C02", LAST_PAY, LAST_PAY) }
+        }
+        val results = mapOf(INVOICE_ID to futureA.get(10, TimeUnit.SECONDS), OTHER_INVOICE_ID to futureB.get(10, TimeUnit.SECONDS))
+        pool.shutdown()
+
+        // 둘 중 정확히 하나가 졌고, 그 창구는 결제가 저장되지 않았다는 예외를 받았다
+        val (lostInvoiceId, lost) = results.entries.single { it.value.isFailure }
+        assertThat(lost.exceptionOrNull()).isInstanceOf(PaymentCompletionConflictException::class.java)
+
+        // 진 창구가 같은 결제를 다시 시도한다. 이번에는 먼저 완료된 수납 건이 보이므로, 결제는 남고 완료가 막힌다
+        val retried = paymentService.receiveCash(lostInvoiceId, COUNTER_ID, "T-C03", LAST_PAY, LAST_PAY)
+
+        assertThat(retried).isInstanceOf(CashResult.CompletionBlocked::class.java)
+        assertThat((retried as CashResult.CompletionBlocked).alreadyPaidItemIds).containsExactlyInAnyOrder(501L, 502L, 503L)
+        val completedWithItem = transactionTemplate.execute {
+            paymentRepository.findAll().count { it.status == PaymentStatus.COMPLETED && 501L in it.orderItemIds }
+        }
+        assertThat(completedWithItem).isEqualTo(1)
+    }
+
     /** billing 시나리오 2의 산정(낼 돈 29,300원). 테스트 데이터라 여기에 둔다. C-03은 같은 항목의 산정 둘을 쓴다. */
     private fun scenarioInvoice(id: Long = INVOICE_ID) = InvoiceView(
         id = id, visitId = VISIT_ID, eligibilitySeq = 1,

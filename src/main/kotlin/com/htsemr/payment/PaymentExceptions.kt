@@ -29,6 +29,17 @@ class InvoiceAlreadyUsedException(val invoiceId: Long)
 class PaymentStartConflictException(val invoiceId: Long)
     : RuntimeException("산정 $invoiceId 으로 다른 창구에서 방금 수납을 시작했습니다. 다시 시도하세요")
 
+/**
+ * 같은 항목을 가진 다른 수납 건이 같은 순간에 먼저 완료했다(C-03, INV-03).
+ * 이 호출의 결제는 저장되지 않았으므로 받은 돈은 돌려준다. 수납 건은 이 결제를 받기 전 상태(진행 중)로 남는다.
+ *
+ * 순서대로 왔다면 결제를 받고 완료가 막힌 결과([CashResult.CompletionBlocked])를 받았을 경우다.
+ * 동시에 와서 DB 제약에 걸렸기 때문에 결과가 아니라 예외가 된다. 제약 위반은 트랜잭션을 롤백시켜 결제를 남길 수 없다.
+ * 다시 시도하면 먼저 완료된 수납 건이 보여서, 순서대로 왔을 때와 같은 CompletionBlocked를 받는다.
+ */
+class PaymentCompletionConflictException(val invoiceId: Long)
+    : RuntimeException("산정 $invoiceId 의 수납 건과 같은 항목을 다른 수납 건이 방금 완료했습니다. 이 결제는 저장되지 않았습니다")
+
 /** 수납 건이 없다. */
 class PaymentNotFoundException(val paymentId: Long)
     : RuntimeException("수납 건 $paymentId 이 없습니다")

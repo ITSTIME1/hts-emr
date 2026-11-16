@@ -286,7 +286,7 @@ internal class PaymentServiceTest @Autowired constructor(
         @Test
         fun `같은 항목이 다른 수납 건으로 이미 완료됐으면 완료하지 않고 받은 결제는 남긴다`() {
             // T-PAY-03의 조건 "포함할 항목이 다른 완료된 수납 건에 없다"(INV-03)를 순서대로 부른 경우에 확인한다.
-            // 동시에 완료를 시도하는 경우(C-03)는 이 확인으로 막히지 않는다. ADR-0003의 재현 대상이다.
+            // 동시에 완료를 시도하는 경우(C-03)는 이 확인으로 막히지 않고 DB 유일 인덱스가 막는다(ADR-0003, PaymentConcurrencyTest).
             //
             // 산정 2는 수납 건 #1이 진행 중일 때 같은 항목(501~503)으로 만들어졌다(진행 중인 항목도 다시 산정할 수 있다).
             given(invoiceQueryService.invoice(SECOND_INVOICE_ID)).willReturn(scenarioInvoice().copy(id = SECOND_INVOICE_ID))

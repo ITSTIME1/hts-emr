@@ -10,16 +10,15 @@ internal interface PaymentRepository : JpaRepository<Payment, Long> {
     /**
      * 그 산정으로 만든, 주어진 상태의 수납 건. 없으면 null.
      *
-     * 슬라이스 1은 산정 하나에 수납 건이 하나라고 가정한다(INV-05). 이를 막는 제약은 일부러 없으므로,
-     * 둘 이상이면 Spring Data가 예외를 던진다. 그 상황이 C-06의 재현 대상이다.
+     * 산정 하나에 수납 건은 하나라(INV-05, V9 유일 제약) 결과는 많아야 한 건이다.
      */
     fun findByInvoiceIdAndStatus(invoiceId: Long, status: PaymentStatus): Payment?
 
     /**
      * 그 산정으로 만든 수납 건이 상태와 상관없이 하나라도 있는지(A-22).
      *
-     * 한 건만 돌려주는 findByInvoiceId가 아니라 exists인 이유: C-06을 재현하면 같은 산정의 수납 건이 둘이 되는데,
-     * 한 건 조회는 그때 결과 개수 예외를 던져 재현하려던 이중 수납을 가린다.
+     * 한 건만 돌려주는 findByInvoiceId가 아니라 exists인 이유: 필요한 것은 있는지뿐이다.
+     * 유일 제약(V9)을 걸기 전에는, C-06에서 수납 건이 둘이 되면 한 건 조회가 결과 개수 예외로 재현을 가렸다.
      */
     fun existsByInvoiceId(invoiceId: Long): Boolean
 
