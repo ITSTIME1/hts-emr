@@ -94,6 +94,42 @@ internal class PaymentConcurrencyTest @Autowired constructor(
             .isEqualTo(PAY * succeeded)
     }
 
+    /**
+     * C-06에서 진 창구가 받는 응답. 유일 제약(V9)을 고른 뒤의 계약이라, 위 테스트와 달리 예외 종류를 본다.
+     * 진 창구는 "다시 시도하라"는 예외를 받고, 다시 시도하면 먼저 만든 수납 건에 이어서 받는다.
+     */
+    @Test
+    fun `동시에 첫 결제가 겹쳐 진 창구는 다시 시도하라는 예외를 받고, 다시 시도하면 먼저 만든 수납 건에 이어서 받는다`() {
+        val arrived = CountDownLatch(2)
+        given(invoiceQueryService.invoice(INVOICE_ID)).willAnswer {
+            arrived.countDown()
+            arrived.await(2, TimeUnit.SECONDS)
+            scenarioInvoice()
+        }
+
+        val pool = Executors.newFixedThreadPool(2)
+        val futureA = pool.submit<Result<CashResult>> {
+            runCatching { paymentService.receiveCash(INVOICE_ID, COUNTER_ID, "T-C01", PAY, PAY) }
+        }
+        val futureB = pool.submit<Result<CashResult>> {
+            runCatching { paymentService.receiveCash(INVOICE_ID, COUNTER_ID, "T-C02", PAY, PAY) }
+        }
+        val resultA = futureA.get(10, TimeUnit.SECONDS)
+        val resultB = futureB.get(10, TimeUnit.SECONDS)
+        pool.shutdown()
+
+        // 둘 중 정확히 하나가 졌고, 그 창구는 다시 시도하라는 예외를 받았다
+        val lost = listOf(resultA, resultB).single { it.isFailure }
+        assertThat(lost.exceptionOrNull()).isInstanceOf(PaymentStartConflictException::class.java)
+
+        // 진 창구가 같은 결제를 다시 시도한다. 이번에는 진행 중인 수납 건이 보이므로 거기에 이어서 받는다
+        val retried = paymentService.receiveCash(INVOICE_ID, COUNTER_ID, "T-C02", PAY, PAY)
+
+        assertThat(retried).isInstanceOf(CashResult.InProgress::class.java)
+        assertThat((retried as CashResult.InProgress).remaining).isEqualTo(Money(9_300))   // 29,300 − 10,000 × 2
+        assertThat(paymentRepository.count()).isEqualTo(1)
+    }
+
     private fun scenarioInvoice() = InvoiceView(
         id = INVOICE_ID, visitId = VISIT_ID, eligibilitySeq = 1,
         insuranceType = InsuranceType.NATIONAL_HEALTH, copayRate = 30,

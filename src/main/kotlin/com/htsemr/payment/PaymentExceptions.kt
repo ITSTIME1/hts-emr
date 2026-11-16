@@ -18,6 +18,17 @@ class PaymentAmountExceededException(val invoiceId: Long, val patientAmount: Mon
 class InvoiceAlreadyUsedException(val invoiceId: Long)
     : RuntimeException("산정 $invoiceId 으로 만든 수납 건이 이미 있습니다. 다시 받으려면 새로 산정하세요")
 
+/**
+ * 다른 창구가 같은 산정으로 같은 순간에 수납 건을 먼저 만들었다(C-06, INV-05).
+ * 이 호출의 결제는 저장되지 않았다. 다시 시도하면 먼저 만든 수납 건을 보고 그 결과를 따른다.
+ * 진행 중이면 거기에 이어서 받고, 이미 끝났으면 [InvoiceAlreadyUsedException]이 난다.
+ *
+ * [InvoiceAlreadyUsedException]과의 차이: 그쪽은 확인할 때 이미 수납 건이 보인 경우라 다시 시도해도 소용없다.
+ * 이쪽은 확인할 때는 없었는데 저장하는 순간 겹친 경우라, 다시 시도하면 된다.
+ */
+class PaymentStartConflictException(val invoiceId: Long)
+    : RuntimeException("산정 $invoiceId 으로 다른 창구에서 방금 수납을 시작했습니다. 다시 시도하세요")
+
 /** 수납 건이 없다. */
 class PaymentNotFoundException(val paymentId: Long)
     : RuntimeException("수납 건 $paymentId 이 없습니다")
