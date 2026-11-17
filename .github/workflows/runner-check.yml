@@ -1,0 +1,14 @@
+name: runner check
+on: workflow_dispatch          # Actions 탭에서 버튼으로만 실행
+
+jobs:
+  check:
+    runs-on: [self-hosted, hts-deploy]
+    steps:
+      - name: 어디서 돌고 있는지
+        run: |
+          hostname
+          uname -m              # arm64가 나와야 맥북
+          docker version --format '{{.Server.Version}}'
+          docker ps --format '{{.Names}}'
+          
