@@ -18,7 +18,7 @@ cd "$DEPLOY_DIR"
 
 ACTIVE_CONF=nginx/upstream/active.conf
 HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-180}
-NGINX_URL=${NGINX_URL:-http://localhost:8080}
+NGINX_URL=${NGINX_URL:-http://127.0.0.1:8080}   # localhost는 ::1(IPv6)로 먼저 갈 수 있어서 IPv4로 고정
 
 log()  { printf '\033[1;34m[deploy]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[deploy] 중단:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -96,38 +96,61 @@ active_header() {
     | tr -d '\r' | awk -F': ' 'tolower($1)=="x-active-color"{print $2}' || true
 }
 
-# active.conf를 바꾸고 nginx -t가 통과할 때만 reload한다. 실패하면 원래 파일로 되돌린다
-point_nginx_to() {
-  local color=$1
-  cp "$ACTIVE_CONF" "$ACTIVE_CONF.bak"
+# nginx 컨테이너 안에서 active.conf가 이 색을 가리키는지 (맥 → OrbStack 파일 공유는 반영이 늦을 수 있다)
+nginx_sees() {
+  docker compose exec -T nginx grep -q "server app-$1:8080;" /etc/nginx/upstream/active.conf 2>/dev/null
+}
+
+# nginx가 새 파일을 볼 때까지 기다린 뒤 검사하고 reload한다. 실패하면 1을 돌려준다
+reload_when_visible() {
+  local color=$1 i
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    nginx_sees "$color" && break
+    [ "$i" = 10 ] && { echo "nginx 컨테이너가 10초 동안 새 active.conf($color)를 보지 못했습니다" >&2; return 1; }
+    sleep 1
+  done
+  docker compose exec -T nginx nginx -t >/dev/null 2>&1 || { docker compose exec -T nginx nginx -t >&2 || true; return 1; }
+  docker compose exec -T nginx nginx -s reload >/dev/null 2>&1
+}
+
+write_active_conf() {
   cat > "$ACTIVE_CONF.tmp" <<CONF
 # 지금 서비스 중인 쪽. deploy.sh가 관리한다 ($(date '+%Y-%m-%d %H:%M:%S'))
 upstream emr_app {
-    server app-$color:8080;
+    server app-$1:8080;
     keepalive 32;
 }
-map \$host \$active_color { default "$color"; }
+map \$host \$active_color { default "$1"; }
 CONF
-  # 같은 inode에 덮어쓰기: nginx 컨테이너는 폴더를 마운트하고 있어서 새 내용을 바로 본다
-  cat "$ACTIVE_CONF.tmp" > "$ACTIVE_CONF" && rm -f "$ACTIVE_CONF.tmp"
+  mv "$ACTIVE_CONF.tmp" "$ACTIVE_CONF"
+}
 
-  if ! docker compose exec -T nginx nginx -t >/dev/null 2>&1; then
-    cat "$ACTIVE_CONF.bak" > "$ACTIVE_CONF"
-    docker compose exec -T nginx nginx -t || true
-    fail "nginx 설정 검사 실패. active.conf를 되돌렸습니다"
+# 실패하면 active.conf를 원래 색으로 되돌리고, nginx도 그 색으로 다시 맞춘다.
+# 파일(운영 상태)과 실제 트래픽이 어긋난 채로 끝나지 않게 하려는 것
+rollback_conf() {
+  local prev=$1
+  write_active_conf "$prev"
+  reload_when_visible "$prev" || true
+}
+
+point_nginx_to() {
+  local color=$1 prev; prev=$(active_color)
+  write_active_conf "$color"
+
+  if ! reload_when_visible "$color"; then
+    rollback_conf "$prev"
+    fail "nginx에 새 설정을 적용하지 못했습니다. active.conf를 app-$prev 로 되돌렸습니다"
   fi
-  local out
-  out=$(docker compose exec -T nginx nginx -s reload 2>&1) || { echo "$out" >&2; fail "nginx reload 실패"; }
-  rm -f "$ACTIVE_CONF.bak"
 
   # reload는 비동기라 잠깐 옛 worker가 응답할 수 있다. 몇 번 다시 확인한다
   local i got=""
-  for i in 1 2 3 4 5; do
+  for i in 1 2 3 4 5 6 7 8 9 10; do
     got=$(active_header)
     [ "$got" = "$color" ] && { log "nginx → app-$color 전환 완료"; return 0; }
     sleep 1
   done
-  fail "reload 후에도 응답 헤더가 $color 가 아닙니다 (받은 값: ${got:-없음})"
+  rollback_conf "$prev"
+  fail "reload 후에도 응답 헤더가 $color 가 아닙니다 (받은 값: ${got:-없음}). active.conf를 app-$prev 로 되돌렸습니다"
 }
 
 # ---------- 명령 ----------
@@ -158,8 +181,8 @@ cmd_deploy() {
   wait_healthy "$to"
 
   # 3) 관문 3: nginx를 거치지 않고 새 쪽에 직접 물어본다
-  log "nginx를 거치지 않고 app-$to 를 직접 확인 (localhost:$(port_of "$to"))"
-  curl -fs "http://localhost:$(port_of "$to")/actuator/health/readiness" >/dev/null \
+  log "nginx를 거치지 않고 app-$to 를 직접 확인 (127.0.0.1:$(port_of "$to"))"
+  curl -fs "http://127.0.0.1:$(port_of "$to")/actuator/health/readiness" >/dev/null \
     || fail "app-$to 직접 확인 실패. 트래픽은 그대로 app-$from 에 있습니다"
 
   # 4) 전환
