@@ -32,3 +32,39 @@ jobs:
           path: build/reports/tests/test
           
         
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, hts-deploy]
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    env:
+      DOCKER_CONTEXT: orbstack
+    steps:
+      - name: 나는 어디서 누구로 돌고 있나
+        run: |
+          whoami; echo $HOME; pwd
+          docker context show
+
+      - name: 코드 받기
+        uses: actions/checkout@v4
+
+      - name: 이미지 빌드 (태그 = 커밋 SHA 7자리)
+        run: |
+          TAG=${GITHUB_SHA::7}
+          docker build -t hts-emr:$TAG .
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: 배포 설정 동기화
+        run: |
+          D=$HOME/hts-deploy
+          mkdir -p $D/nginx/upstream
+          cp deploy/compose.yml $D/
+          cp deploy/nginx/default.conf $D/nginx/
+          [ -f $D/nginx/upstream/active.conf ] || cp deploy/nginx/upstream/active.conf $D/nginx/upstream/
+          cp deploy/deploy.sh $D/ && chmod +x $D/deploy.sh
+
+      - name: 배포
+        run: $HOME/hts-deploy/deploy.sh "$TAG"
