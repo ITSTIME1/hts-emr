@@ -44,12 +44,12 @@ services:
   # <<: *app App 컨테이너에 적용할 공통 설정을 별도로 분리
   app-blue:
     <<: *app
-    image: hts-emr:${BLUE_TAG:-local}
+    image: ghcr.io/itstime1/hts-emr:${BLUE_TAG:-local}
     ports:
       - "8081:8080"
   app-green:
     <<: *app
-    image: hts-emr:${GREEN_TAG:-local}
+    image: ghcr.io/itstime1/hts-emr:${GREEN_TAG:-local}
     ports:
       - "8082:8080"
 
