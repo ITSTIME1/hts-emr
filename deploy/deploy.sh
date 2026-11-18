@@ -8,6 +8,7 @@ cd "$DEPLOY_DIR"
 ACTIVE_CONF=nginx/upstream/active.conf
 HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-180}
 NGINX_URL=${NGINX_URL:-http://127.0.0.1:8080}
+IMAGE=${IMAGE:-ghcr.io/itstime1/hts-emr}   # compose.yml의 image 주소와 같아야 한다
 
 log()  { printf '\033[1;34m[deploy]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[deploy] 중단:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -147,8 +148,9 @@ cmd_status() {
 
 cmd_deploy() {
   local tag=$1
-  docker image inspect "hts-emr:$tag" >/dev/null 2>&1 \
-    || fail "이미지 hts-emr:$tag 가 없습니다. 먼저 docker build -t hts-emr:$tag . 를 하세요"
+  # 로컬에서 다시 빌드하지 않고, CI가 GHCR에 올려 둔 이미지를 그대로 받는다. 받지 못하면 아무것도 바꾸기 전에 중단
+  docker pull "$IMAGE:$tag" >/dev/null 2>&1 \
+    || fail "이미지 $IMAGE:$tag 를 받지 못했습니다 (태그가 맞는지, GHCR 로그인이 되어 있는지 확인하세요)"
   lock
 
   local from to; from=$(active_color); to=$(other_color "$from")
