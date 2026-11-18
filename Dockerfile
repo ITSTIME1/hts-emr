@@ -1,6 +1,6 @@
 ARG TEMURIN_VERSION=21.0.13_9
 
-FROM eclipse-temurin:${TEMURIN_VERSION}-jdk AS build
+FROM --platform=$BUILDPLATFORM eclipse-temurin:${TEMURIN_VERSION}-jdk AS build
 WORKDIR /workspace
 
 
