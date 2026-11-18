@@ -24,5 +24,4 @@ COPY --from=build --chown=app:app /workspace/app.jar app.jar
 USER app
 
 EXPOSE 8080
-
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "/app/app.jar"]
