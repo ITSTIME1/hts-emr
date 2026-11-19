@@ -63,7 +63,6 @@ class VisitControllerTest {
 
         mockMvc.post("/api/v1/visits") {
             contentType = MediaType.APPLICATION_JSON
-            // patient_no, visit_date, department_code
             content = """{"patientNo":"P0001","departmentCode":"IM","doctorNo":"D0001","visitDate":"2026-11-19"}"""
         }.andExpect {
             status { isConflict() }
