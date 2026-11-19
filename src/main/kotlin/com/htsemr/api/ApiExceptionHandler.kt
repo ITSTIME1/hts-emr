@@ -1,5 +1,9 @@
 package com.htsemr.api
 
+import com.htsemr.master.FeeItemNotFoundException
+import com.htsemr.order.NoPriceOnVisitDateException
+import com.htsemr.order.OrderItemNotCancellableException
+import com.htsemr.order.OrderItemNotFoundException
 import com.htsemr.reception.DuplicateVisitException
 import com.htsemr.reception.VisitNotFoundException
 import org.slf4j.LoggerFactory
@@ -84,6 +88,51 @@ internal class ApiExceptionHandler : ResponseEntityExceptionHandler() {
         )
         problem.title = "Visit not found"
         problem.setProperty("code", "VISIT_NOT_FOUND")
+        return problem
+    }
+
+    @ExceptionHandler(FeeItemNotFoundException::class)
+    fun feeItemNotFound(ex: FeeItemNotFoundException): ProblemDetail {
+        val problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.NOT_FOUND,
+            "해당 수가 항목을 찾을 수 없습니다",
+        )
+        problem.title = "Fee item not found"
+        problem.setProperty("code", "FEE_ITEM_NOT_FOUND")
+        return problem
+    }
+
+    @ExceptionHandler(OrderItemNotFoundException::class)
+    fun orderItemNotFound(ex: OrderItemNotFoundException): ProblemDetail {
+        val problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.NOT_FOUND,
+            "해당 오더 항목을 찾을 수 없습니다",
+        )
+        problem.title = "Order item not found"
+        problem.setProperty("code", "ORDER_ITEM_NOT_FOUND")
+        return problem
+    }
+
+    @ExceptionHandler(NoPriceOnVisitDateException::class)
+    fun noPriceOnVisitDate(ex: NoPriceOnVisitDateException): ProblemDetail {
+        val problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "진료일에 유효한 수가가 없는 수가 항목입니다",
+        )
+        problem.title = "No price on visit date"
+        problem.setProperty("code", "NO_PRICE_ON_VISIT_DATE")
+        return problem
+    }
+
+    @ExceptionHandler(OrderItemNotCancellableException::class)
+    fun orderItemNotCancellable(ex: OrderItemNotCancellableException): ProblemDetail {
+        val problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.CONFLICT,
+            "현재 상태에서는 오더 항목을 취소할 수 없습니다",
+        )
+        problem.title = "Order item not cancellable"
+        problem.setProperty("code", "ORDER_ITEM_NOT_CANCELLABLE")
+        problem.setProperty("currentStatus", ex.status.name)
         return problem
     }
 

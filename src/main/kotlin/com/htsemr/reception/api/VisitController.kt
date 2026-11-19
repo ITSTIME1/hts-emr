@@ -1,8 +1,10 @@
 package com.htsemr.reception.api
 
+import com.htsemr.reception.EligibilityQueryService
 import com.htsemr.reception.RegistrationService
 import com.htsemr.reception.VisitQueryService
 import com.htsemr.reception.VisitView
+import com.htsemr.reception.api.dto.EligibilityResponse
 import com.htsemr.reception.api.dto.RegisterVisitRequest
 import com.htsemr.reception.api.dto.RegisteredVisit
 import com.htsemr.reception.api.dto.VisitResponse
@@ -20,8 +22,13 @@ import java.net.URI
 @RequestMapping("/api/v1/visits")
 internal class VisitController (
     private val registrationService : RegistrationService,
-    private val visitQueryService : VisitQueryService
+    private val visitQueryService : VisitQueryService,
+    private val eligibilityQueryService : EligibilityQueryService,
 ){
+
+    @GetMapping("/{visitId}/eligibility")
+    fun getEligibility(@PathVariable visitId : Long) : EligibilityResponse =
+        EligibilityResponse.from(eligibilityQueryService.currentEligibility(visitId))
 
     @GetMapping("/{visitId}")
     fun getVisit(@PathVariable visitId : Long) : VisitResponse {
@@ -44,5 +51,4 @@ internal class VisitController (
             .created(URI.create("/api/v1/visits/$visitId"))
             .body(RegisteredVisit(visitId))
     }
-
 }
