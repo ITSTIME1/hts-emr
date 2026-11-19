@@ -2,6 +2,9 @@ package com.htsemr.reception.api
 
 import com.htsemr.api.ApiExceptionHandler
 import com.htsemr.reception.DuplicateVisitException
+import com.htsemr.reception.EligibilityQueryService
+import com.htsemr.reception.EligibilityView
+import com.htsemr.reception.InsuranceType
 import com.htsemr.reception.RegistrationService
 import com.htsemr.reception.VisitNotFoundException
 import com.htsemr.reception.VisitQueryService
@@ -19,15 +22,16 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.put
 import java.time.LocalDate
-import kotlin.jvm.java
+import java.time.LocalDateTime
 
 class VisitControllerTest {
 
     private val registrationService = mock(RegistrationService::class.java)
     private val visitQueryService = mock(VisitQueryService::class.java)
+    private val eligibilityQueryService = mock(EligibilityQueryService::class.java)
 
     private val mockMvc = MockMvcBuilders
-        .standaloneSetup(VisitController(registrationService, visitQueryService))
+        .standaloneSetup(VisitController(registrationService, visitQueryService, eligibilityQueryService))
         .setControllerAdvice(ApiExceptionHandler())
         .build()
 
@@ -180,5 +184,46 @@ class VisitControllerTest {
             jsonPath("$.code") { value("METHOD_NOT_ALLOWED") }
         }
         verifyNoInteractions(visitQueryService)
+    }
+
+    @Test
+    fun `TC-A-12 존재하는 접수의 현재 자격은 200과 자격 정보를 돌려준다`() {
+        given(eligibilityQueryService.currentEligibility(57L)).willReturn(
+            EligibilityView(
+                visitId = 57L,
+                seq = 2,
+                insuranceType = InsuranceType.NATIONAL_HEALTH,
+                copayRate = 30,
+                recordedAt = LocalDateTime.of(2026, 11, 19, 10, 30, 0),
+            ),
+        )
+
+        mockMvc.get("/api/v1/visits/57/eligibility").andExpect {
+            status { isOk() }
+            jsonPath("$.visitId") { value(57) }
+            jsonPath("$.seq") { value(2) }
+            jsonPath("$.insuranceType") { value("NATIONAL_HEALTH") }
+            jsonPath("$.copayRate") { value(30) }
+            jsonPath("$.recordedAt") { value("2026-11-19T10:30:00") }
+        }
+    }
+
+    @Test
+    fun `TC-A-13 없는 접수의 자격 조회는 404 VISIT_NOT_FOUND`() {
+        given(eligibilityQueryService.currentEligibility(999L)).willThrow(VisitNotFoundException(999L))
+
+        mockMvc.get("/api/v1/visits/999/eligibility").andExpect {
+            status { isNotFound() }
+            jsonPath("$.code") { value("VISIT_NOT_FOUND") }
+        }
+    }
+
+    @Test
+    fun `TC-A-14 자격 조회의 접수 ID가 숫자가 아니면 400 BAD_REQUEST`() {
+        mockMvc.get("/api/v1/visits/abc/eligibility").andExpect {
+            status { isBadRequest() }
+            jsonPath("$.code") { value("BAD_REQUEST") }
+        }
+        verifyNoInteractions(eligibilityQueryService)
     }
 }
