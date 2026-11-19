@@ -1,9 +1,18 @@
 package com.htsemr.api
 
+import com.htsemr.billing.InvoiceNotFoundException
+import com.htsemr.master.CounterNotFoundException
 import com.htsemr.master.FeeItemNotFoundException
+import com.htsemr.master.FeePriceNotFoundException
 import com.htsemr.order.NoPriceOnVisitDateException
 import com.htsemr.order.OrderItemNotCancellableException
 import com.htsemr.order.OrderItemNotFoundException
+import com.htsemr.payment.InvoiceAlreadyUsedException
+import com.htsemr.payment.NothingToPayException
+import com.htsemr.payment.PaymentAmountExceededException
+import com.htsemr.payment.PaymentCompletionConflictException
+import com.htsemr.payment.PaymentNotFoundException
+import com.htsemr.payment.PaymentStartConflictException
 import com.htsemr.reception.DuplicateVisitException
 import com.htsemr.reception.VisitNotFoundException
 import org.slf4j.LoggerFactory
@@ -133,6 +142,64 @@ internal class ApiExceptionHandler : ResponseEntityExceptionHandler() {
         problem.title = "Order item not cancellable"
         problem.setProperty("code", "ORDER_ITEM_NOT_CANCELLABLE")
         problem.setProperty("currentStatus", ex.status.name)
+        return problem
+    }
+
+    @ExceptionHandler(InvoiceNotFoundException::class)
+    fun invoiceNotFound(ex: InvoiceNotFoundException): ProblemDetail =
+        problem(HttpStatus.NOT_FOUND, "Invoice not found", "INVOICE_NOT_FOUND", "해당 산정을 찾을 수 없습니다")
+
+    @ExceptionHandler(CounterNotFoundException::class)
+    fun counterNotFound(ex: CounterNotFoundException): ProblemDetail =
+        problem(HttpStatus.NOT_FOUND, "Counter not found", "COUNTER_NOT_FOUND", "해당 창구를 찾을 수 없습니다")
+
+    @ExceptionHandler(PaymentNotFoundException::class)
+    fun paymentNotFound(ex: PaymentNotFoundException): ProblemDetail =
+        problem(HttpStatus.NOT_FOUND, "Payment not found", "PAYMENT_NOT_FOUND", "해당 수납 건을 찾을 수 없습니다")
+
+    @ExceptionHandler(NothingToPayException::class)
+    fun nothingToPay(ex: NothingToPayException): ProblemDetail =
+        problem(HttpStatus.CONFLICT, "Nothing to pay", "NOTHING_TO_PAY", "수납할 오더 항목이 없습니다")
+
+    @ExceptionHandler(InvoiceAlreadyUsedException::class)
+    fun invoiceAlreadyUsed(ex: InvoiceAlreadyUsedException): ProblemDetail =
+        problem(
+            HttpStatus.CONFLICT, "Invoice already used", "INVOICE_ALREADY_USED",
+            "이 산정으로 만든 수납 건이 이미 있습니다. 다시 받으려면 새로 산정하세요",
+        )
+
+    @ExceptionHandler(PaymentStartConflictException::class)
+    fun paymentStartConflict(ex: PaymentStartConflictException): ProblemDetail =
+        problem(
+            HttpStatus.CONFLICT, "Payment start conflict", "PAYMENT_START_CONFLICT",
+            "다른 창구에서 방금 같은 산정으로 수납을 시작했습니다. 다시 시도하세요",
+        )
+
+    @ExceptionHandler(PaymentCompletionConflictException::class)
+    fun paymentCompletionConflict(ex: PaymentCompletionConflictException): ProblemDetail =
+        problem(
+            HttpStatus.CONFLICT, "Payment completion conflict", "PAYMENT_COMPLETION_CONFLICT",
+            "같은 항목을 다른 수납 건이 방금 완료했습니다. 이 결제는 저장되지 않았습니다",
+        )
+
+    @ExceptionHandler(PaymentAmountExceededException::class)
+    fun paymentAmountExceeded(ex: PaymentAmountExceededException): ProblemDetail =
+        problem(
+            HttpStatus.UNPROCESSABLE_ENTITY, "Payment amount exceeded", "PAYMENT_AMOUNT_EXCEEDED",
+            "결제 합계가 본인부담 합계를 넘습니다",
+        )
+
+    @ExceptionHandler(FeePriceNotFoundException::class)
+    fun feePriceNotFound(ex: FeePriceNotFoundException): ProblemDetail =
+        problem(
+            HttpStatus.UNPROCESSABLE_ENTITY, "Fee price not found", "FEE_PRICE_NOT_FOUND",
+            "진료일에 유효한 단가가 없는 수가 항목이 있습니다",
+        )
+
+    private fun problem(status: HttpStatus, title: String, code: String, detail: String): ProblemDetail {
+        val problem = ProblemDetail.forStatusAndDetail(status, detail)
+        problem.title = title
+        problem.setProperty("code", code)
         return problem
     }
 
