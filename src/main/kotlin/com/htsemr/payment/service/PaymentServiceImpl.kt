@@ -5,6 +5,7 @@ import com.htsemr.billing.BillingTarget
 import com.htsemr.billing.InvoiceQueryService
 import com.htsemr.common.Money
 import com.htsemr.master.CounterQueryService
+import com.htsemr.observability.DomainEventLog
 import com.htsemr.order.OrderItemQueryService
 import com.htsemr.payment.CashResult
 import com.htsemr.payment.InvoiceAlreadyUsedException
@@ -66,11 +67,15 @@ internal class PaymentServiceImpl(
                 Payment.start(invoice, counter.id, cashierNo, now)
             }
 
+        val isNew = payment.id == null
+
         payment.receiveCash(received, amount, now)
 
         if (!payment.isFullyPaid) {
             val saved = save(payment)
-            return CashResult.InProgress(requireNotNull(saved.id), saved.remaining)
+            val paymentId = requireNotNull(saved.id)
+            emitCashEvents(saved, paymentId, isNew, counterId, received, amount)
+            return CashResult.InProgress(paymentId, saved.remaining)
         }
 
         val statuses = orderItemQueryService.statusesOf(payment.orderItemIds)
@@ -80,11 +85,53 @@ internal class PaymentServiceImpl(
 
         val saved = save(payment)
         val paymentId = requireNotNull(saved.id)
+        emitCashEvents(saved, paymentId, isNew, counterId, received, amount)
         return if (blockers.isEmpty) {
+            DomainEventLog.emit(
+                "payment.completed",
+                "paymentId" to paymentId,
+                "invoiceId" to saved.invoiceId,
+                "itemCount" to saved.orderItemIds.size,
+            )
             CashResult.Completed(paymentId)
         } else {
+            DomainEventLog.emit(
+                "payment.completionBlocked",
+                "paymentId" to paymentId,
+                "invoiceId" to saved.invoiceId,
+                "ineffectiveItemIds" to blockers.ineffectiveItemIds.sorted(),
+                "alreadyPaidItemIds" to blockers.alreadyPaidItemIds.sorted(),
+            )
             CashResult.CompletionBlocked(paymentId, blockers.ineffectiveItemIds, blockers.alreadyPaidItemIds)
         }
+    }
+
+    private fun emitCashEvents(
+        payment: Payment,
+        paymentId: Long,
+        isNew: Boolean,
+        counterId: Long,
+        received: Money,
+        applied: Money,
+    ) {
+        if (isNew) {
+            DomainEventLog.emit(
+                "payment.started",
+                "paymentId" to paymentId,
+                "invoiceId" to payment.invoiceId,
+                "visitId" to payment.visitId,
+                "counterId" to counterId,
+                "cashierNo" to payment.cashierNo,
+            )
+        }
+        DomainEventLog.emit(
+            "payment.cashReceived",
+            "paymentId" to paymentId,
+            "invoiceId" to payment.invoiceId,
+            "applied" to applied.amount,
+            "received" to received.amount,
+            "remaining" to payment.remaining.amount,
+        )
     }
 
     private fun save(payment: Payment): Payment {

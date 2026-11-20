@@ -1,5 +1,8 @@
 package com.htsemr.reception.service
 
+import com.htsemr.observability.DomainEventLog
+import com.htsemr.observability.ExternalCallLog
+import com.htsemr.observability.PatientRef
 import com.htsemr.reception.DuplicateVisitException
 import com.htsemr.reception.RegistrationService
 import com.htsemr.reception.entity.Eligibility
@@ -25,7 +28,9 @@ internal class RegistrationServiceImpl(
     override fun registerVisit(patientNo: String, departmentCode: String, doctorNo: String, visitDate: LocalDate): Long {
         val processStartedAt = LocalDateTime.now()
 
-        val eligibilityResponse = eligibilityProvider.inquireEligibility(patientNo = patientNo, visitDate = visitDate)
+        val eligibilityResponse = ExternalCallLog.record("eligibility") {
+            eligibilityProvider.inquireEligibility(patientNo = patientNo, visitDate = visitDate)
+        }
 
         return try {
             transactionTemplate.execute {
@@ -49,6 +54,15 @@ internal class RegistrationServiceImpl(
                         recordedAt = processStartedAt,
                     )
                 )
+
+                DomainEventLog.emit(
+                    "visit.registered",
+                    "visitId" to savedVisit.id,
+                    "patientRef" to PatientRef.of(patientNo),
+                    "departmentCode" to departmentCode,
+                    "insuranceType" to eligibilityResponse.insuranceType.name,
+                    "copayRate" to eligibilityResponse.copayRate,
+                )
                 savedVisit.id
             } ?: error("내원 건 저장 트랜잭션이 결과를 돌려주지 않았습니다")
         } catch(e: DataIntegrityViolationException) {
@@ -59,6 +73,12 @@ internal class RegistrationServiceImpl(
                 ?.substringAfterLast('.')
 
             if (violatedConstraint.equals("uk_visit_patient_date_dept", ignoreCase = true)) {
+                DomainEventLog.emit(
+                    "visit.duplicateRejected",
+                    "patientRef" to PatientRef.of(patientNo),
+                    "departmentCode" to departmentCode,
+                    "visitDate" to visitDate.toString(),
+                )
                 throw DuplicateVisitException(patientNo, visitDate, departmentCode, e)
             }
 
