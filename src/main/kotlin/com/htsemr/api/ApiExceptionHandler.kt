@@ -212,7 +212,7 @@ internal class ApiExceptionHandler : ResponseEntityExceptionHandler() {
             "서버에서 요청을 처리하지 못했습니다",
         )
         problem.title = "Internal error"
-        problem.setProperty("code", "INTERNAL_ERROR")
+        problem.setProperty("code", ErrorCodes.INTERNAL_ERROR)
         return problem
     }
 
