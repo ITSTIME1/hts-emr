@@ -13,6 +13,7 @@ x-app: &app
     SPRING_DATASOURCE_USERNAME: emr
     SPRING_DATASOURCE_PASSWORD: ${APP_USER_PASSWORD:?.env에 APP_USER_PASSWORD가 필요합니다}
     APP_ENV: ${APP_ENV:-prod}
+    PATIENT_REF_SALT: ${PATIENT_REF_SALT:-}
 
   volumes:
     - app-logs:/var/log/app

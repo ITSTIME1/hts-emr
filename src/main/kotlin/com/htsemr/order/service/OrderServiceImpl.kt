@@ -10,6 +10,7 @@ import com.htsemr.order.entity.OrderItem
 import com.htsemr.order.repository.MedicalOrderRepository
 import com.htsemr.order.repository.OrderItemCancellationRepository
 import com.htsemr.order.repository.OrderItemRepository
+import com.htsemr.observability.DomainEventLog
 import com.htsemr.reception.VisitQueryService
 import com.htsemr.reception.VisitView
 import org.springframework.data.repository.findByIdOrNull
@@ -66,6 +67,14 @@ internal class OrderServiceImpl(
                 )
             }
         )
+
+        DomainEventLog.emit(
+            "order.placed",
+            "orderId" to orderId,
+            "visitId" to visit.id,
+            "itemCount" to items.size,
+            "doctorNo" to doctorNo,
+        )
         return orderId
     }
 
@@ -73,6 +82,7 @@ internal class OrderServiceImpl(
         val orderItem = orderItemRepository.findByIdOrNull(orderItemId)
             ?: throw OrderItemNotFoundException(orderItemId)
 
+        val statusBefore = orderItem.status
         val cancellation = orderItem.cancel(
             doctorNo = doctorNo,
             reason = reason,
@@ -80,5 +90,13 @@ internal class OrderServiceImpl(
         )
 
         orderItemCancellationRepository.save(cancellation)
+
+        DomainEventLog.emit(
+            "orderItem.cancelled",
+            "orderItemId" to orderItemId,
+            "from" to statusBefore.name,
+            "to" to orderItem.status.name,
+            "doctorNo" to doctorNo,
+        )
     }
 }
