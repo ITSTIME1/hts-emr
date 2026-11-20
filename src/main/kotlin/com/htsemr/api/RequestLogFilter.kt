@@ -60,6 +60,7 @@ internal class RequestLogFilter : OncePerRequestFilter() {
 
             MDC.remove(REQUEST_ID_KEY)
             MDC.remove(SESSION_ID_KEY)
+            BusinessKeyInterceptor.KEYS.forEach { MDC.remove(it) }
         }
     }
 
