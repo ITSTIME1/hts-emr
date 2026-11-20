@@ -91,8 +91,8 @@ internal class BusinessKeyMdcTest {
 
     @Test
     fun `숫자가 아니거나 너무 긴 값은 키를 생략하고 원본 값이 로그에 남지 않는다`() {
-        mockMvc.get("/api/v1/visits/abc").andExpect { status { isBadRequest() } }
-        mockMvc.get("/api/v1/visits/${"1".repeat(19)}").andReturn()
+        mockMvc.get("/api/v1/visits/abc") { header("X-Request-Id", "req-1") }.andExpect { status { isBadRequest() } }
+        mockMvc.get("/api/v1/visits/${"1".repeat(19)}") { header("X-Request-Id", "req-2") }.andReturn()
 
         requestLines().forEach { line ->
             assertThat(line.businessKeys()).isEmpty()
