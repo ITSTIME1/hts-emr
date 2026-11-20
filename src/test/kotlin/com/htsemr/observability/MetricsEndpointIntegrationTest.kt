@@ -79,9 +79,11 @@ internal class MetricsEndpointIntegrationTest @Autowired constructor(
         get("/no/such/path/777777")
 
         val metrics = scrape()
-        assertThat(metrics).contains("uri=\"/api/v1/visits/{visitId}\"")
-        assertThat(metrics).doesNotContain("999999")
-        assertThat(metrics).doesNotContain("777777")
+        val uris = requestLines(metrics)
+            .mapNotNull { Regex("uri=\"([^\"]+)\"").find(it)?.groupValues?.get(1) }
+            .toSet()
+        assertThat(uris).contains("/api/v1/visits/{visitId}")
+        assertThat(uris).noneMatch { it.contains("999999") || it.contains("777777") }
 
         val notFoundUris = requestLines(metrics)
             .filter { it.contains("status=\"404\"") }
