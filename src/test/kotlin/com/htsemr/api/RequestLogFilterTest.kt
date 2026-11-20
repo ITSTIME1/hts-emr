@@ -4,8 +4,24 @@ import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
+import com.htsemr.common.Money
+import com.htsemr.payment.CashResult
 import com.htsemr.payment.NothingToPayException
+import com.htsemr.payment.PaymentAmountExceededException
+import com.htsemr.payment.PaymentQueryService
+import com.htsemr.payment.PaymentService
+import com.htsemr.payment.api.PaymentController
+import com.htsemr.reception.VisitNotFoundException
+import com.jayway.jsonpath.JsonPath
 import jakarta.servlet.ServletException
+import jakarta.validation.Valid
+import jakarta.validation.constraints.NotBlank
+import org.mockito.BDDMockito.given
+import org.mockito.Mockito.mock
+import org.springframework.http.MediaType
+import org.springframework.test.web.servlet.post
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
@@ -31,7 +47,15 @@ internal class RequestLogFilterTest {
 
     private val mockMvc: MockMvc = MockMvcBuilders
         .standaloneSetup(TestController())
-        .setControllerAdvice(ApiExceptionHandler())
+        .setControllerAdvice(ApiExceptionHandler(), ErrorCodeAdvice())
+        .addFilters<StandaloneMockMvcBuilder>(RequestLogFilter())
+        .build()
+
+    private val paymentService = mock(PaymentService::class.java)
+
+    private val paymentMockMvc: MockMvc = MockMvcBuilders
+        .standaloneSetup(PaymentController(paymentService, mock(PaymentQueryService::class.java)))
+        .setControllerAdvice(ApiExceptionHandler(), ErrorCodeAdvice())
         .addFilters<StandaloneMockMvcBuilder>(RequestLogFilter())
         .build()
 
@@ -64,6 +88,8 @@ internal class RequestLogFilterTest {
 
     private fun ILoggingEvent.field(key: String): Any? =
         keyValuePairs?.firstOrNull { it.key == key }?.value
+
+    private fun bodyCode(body: String): String = JsonPath.read(body, "$.code")
 
     @Test
     fun `정상 요청은 요청 줄을 한 줄 남기고 필드가 채워진다`() {
@@ -112,6 +138,7 @@ internal class RequestLogFilterTest {
         val line = requestLines().single()
         assertThat(line.field("status")).isEqualTo(500)
         assertThat(line.field("outcome")).isEqualTo("FAILED")
+        assertThat(line.field("errorCode")).isEqualTo("INTERNAL_ERROR")
 
         val errorLog = handlerAppender.list.single { it.level == Level.ERROR }
         assertThat(errorLog.mdcPropertyMap["requestId"]).isEqualTo("req-500")
@@ -124,6 +151,7 @@ internal class RequestLogFilterTest {
         val line = requestLines().single()
         assertThat(line.field("status")).isEqualTo(500)
         assertThat(line.field("outcome")).isEqualTo("FAILED")
+        assertThat(line.field("errorCode")).isEqualTo("INTERNAL_ERROR")
         assertThat(MDC.get("requestId")).isNull()
     }
 
@@ -198,8 +226,76 @@ internal class RequestLogFilterTest {
         assertThat(line.field("outcome")).isEqualTo("REJECTED")
     }
 
+    @Test
+    fun `정상 요청에는 errorCode 필드가 없다`() {
+        mockMvc.get("/api/v1/visits/57").andReturn()
+
+        assertThat(requestLines().single().keyValuePairs.map { it.key }).doesNotContain("errorCode")
+    }
+
+    @Test
+    fun `업무 예외로 끝난 요청의 errorCode는 응답 본문의 code와 같다`() {
+        listOf(
+            "/api/v1/visits/57/conflict" to "NOTHING_TO_PAY",
+            "/api/v1/visits/57/missing" to "VISIT_NOT_FOUND",
+            "/api/v1/visits/57/exceeded" to "PAYMENT_AMOUNT_EXCEEDED",
+        ).forEach { (path, expectedCode) ->
+            val body = mockMvc.get(path).andReturn().response.contentAsString
+
+            assertThat(bodyCode(body)).isEqualTo(expectedCode)
+            assertThat(requestLines().last().field("errorCode")).isEqualTo(bodyCode(body))
+        }
+    }
+
+    @Test
+    fun `검증 실패와 깨진 본문과 허용되지 않는 메서드도 본문의 code가 errorCode로 남는다`() {
+        val validation = mockMvc.post("/validate") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"name":""}"""
+        }.andReturn().response.contentAsString
+        assertThat(requestLines().last().field("errorCode")).isEqualTo("VALIDATION_FAILED").isEqualTo(bodyCode(validation))
+
+        val malformed = mockMvc.post("/validate") {
+            contentType = MediaType.APPLICATION_JSON
+            content = "{broken"
+        }.andReturn().response.contentAsString
+        assertThat(requestLines().last().field("errorCode")).isEqualTo("MALFORMED_REQUEST").isEqualTo(bodyCode(malformed))
+
+        val notAllowed = mockMvc.get("/validate").andReturn().response.contentAsString
+        assertThat(requestLines().last().field("errorCode")).isEqualTo("METHOD_NOT_ALLOWED").isEqualTo(bodyCode(notAllowed))
+    }
+
+    @Test
+    fun `컨트롤러가 예외 없이 직접 돌려준 에러 응답의 code도 errorCode로 남는다`() {
+        given(paymentService.receiveCash(700L, 3L, "C0001", Money(10000), Money(5000)))
+            .willReturn(CashResult.CompletionBlocked(800L, setOf(901L), setOf(903L)))
+
+        val body = paymentMockMvc.post("/api/v1/invoices/700/cash-payments") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"counterId":3,"cashierNo":"C0001","receivedAmount":10000,"appliedAmount":5000}"""
+        }.andExpect { status { isConflict() } }.andReturn().response.contentAsString
+
+        val line = requestLines().single()
+        assertThat(bodyCode(body)).isEqualTo("PAYMENT_COMPLETION_BLOCKED")
+        assertThat(line.field("errorCode")).isEqualTo("PAYMENT_COMPLETION_BLOCKED")
+        assertThat(line.field("outcome")).isEqualTo("REJECTED")
+    }
+
     @RestController
     private class TestController {
+
+        @GetMapping("/api/v1/visits/{visitId}/missing")
+        fun missing(@PathVariable visitId: Long): String = throw VisitNotFoundException(visitId)
+
+        @GetMapping("/api/v1/visits/{visitId}/exceeded")
+        fun exceeded(@PathVariable visitId: Long): String =
+            throw PaymentAmountExceededException(visitId, Money(1000), Money(2000))
+
+        @PostMapping("/validate")
+        fun validate(@Valid @RequestBody request: ValidateRequest): String = "ok"
+
+        data class ValidateRequest(@field:NotBlank val name: String)
+
 
         @GetMapping("/api/v1/visits/{visitId}")
         fun visit(@PathVariable visitId: Long): String = "ok"

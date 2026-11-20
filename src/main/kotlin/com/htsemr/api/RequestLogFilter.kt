@@ -40,15 +40,23 @@ internal class RequestLogFilter : OncePerRequestFilter() {
             throw t
         } finally {
             val status = if (failure != null) HttpServletResponse.SC_INTERNAL_SERVER_ERROR else response.status
-            val route = request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE) as? String ?: UNMATCHED
+            val route = (request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE) as? String)
+                ?.takeUnless { it == STATIC_RESOURCE_PATTERN }
+                ?: UNMATCHED
 
-            log.atInfo()
+            val errorCode = if (failure != null) {
+                ErrorCodes.INTERNAL_ERROR
+            } else {
+                request.getAttribute(ERROR_CODE_ATTRIBUTE) as? String
+            }
+
+            val event = log.atInfo()
                 .addKeyValue("method", request.method)
                 .addKeyValue("route", route)
                 .addKeyValue("status", status)
                 .addKeyValue("durationMs", (System.nanoTime() - startedAt) / NANOS_PER_MILLI)
                 .addKeyValue("outcome", outcomeOf(status))
-                .log(MESSAGE)
+            (if (errorCode != null) event.addKeyValue("errorCode", errorCode) else event).log(MESSAGE)
 
             MDC.remove(REQUEST_ID_KEY)
             MDC.remove(SESSION_ID_KEY)
@@ -69,9 +77,11 @@ internal class RequestLogFilter : OncePerRequestFilter() {
         const val SESSION_ID_HEADER = "X-Session-Id"
         const val MESSAGE = "http.request"
         const val UNMATCHED = "UNMATCHED"
+        const val ERROR_CODE_ATTRIBUTE = "com.htsemr.api.errorCode"
 
         private const val REQUEST_ID_KEY = "requestId"
         private const val SESSION_ID_KEY = "sessionId"
+        private const val STATIC_RESOURCE_PATTERN = "/**"
         private const val ACTUATOR_PREFIX = "/actuator"
         private const val NANOS_PER_MILLI = 1_000_000L
 

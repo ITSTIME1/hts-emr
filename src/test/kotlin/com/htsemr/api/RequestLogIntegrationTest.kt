@@ -45,7 +45,28 @@ internal class RequestLogIntegrationTest @Autowired constructor(
         assertThat(json.read<String>("$.route")).isEqualTo("/api/v1/visits/{visitId}")
         assertThat(json.read<Int>("$.status")).isEqualTo(404)
         assertThat(json.read<String>("$.outcome")).isEqualTo("REJECTED")
+        assertThat(json.read<String>("$.errorCode")).isEqualTo("VISIT_NOT_FOUND")
         assertThat(json.read<Number>("$.durationMs").toLong()).isGreaterThanOrEqualTo(0)
         assertThat(json.read<String>("$.log.level")).isEqualTo("INFO")
+    }
+
+    @Test
+    fun `존재하지 않는 경로는 route가 UNMATCHED이고 errorCode가 NOT_FOUND로 남는다`(output: CapturedOutput) {
+        val mockMvc = MockMvcBuilders.webAppContextSetup(context)
+            .addFilters<DefaultMockMvcBuilder>(requestLogFilter)
+            .build()
+
+        mockMvc.get("/no/such/path/12345") {
+            header("X-Request-Id", "req-it-404")
+        }.andExpect { status { isNotFound() } }
+
+        val line = output.out.lineSequence()
+            .firstOrNull { it.contains("\"message\":\"http.request\"") && it.contains("req-it-404") }
+        assertThat(line).describedAs("http.request JSON 줄").isNotNull()
+
+        val json = JsonPath.parse(line!!)
+        assertThat(json.read<String>("$.route")).isEqualTo("UNMATCHED")
+        assertThat(json.read<Int>("$.status")).isEqualTo(404)
+        assertThat(json.read<String>("$.errorCode")).isEqualTo("NOT_FOUND")
     }
 }
