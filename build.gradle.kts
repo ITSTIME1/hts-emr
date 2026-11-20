@@ -22,6 +22,7 @@ dependencyManagement {
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    runtimeOnly("io.micrometer:micrometer-registry-prometheus")
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.modulith:spring-modulith-starter-core")
@@ -35,6 +36,7 @@ dependencies {
     runtimeOnly("com.oracle.database.jdbc:ojdbc11")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("org.springframework.boot:spring-boot-starter-micrometer-metrics-test")
     testImplementation("org.springframework.modulith:spring-modulith-starter-test")
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
