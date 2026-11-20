@@ -18,7 +18,8 @@ FROM eclipse-temurin:${TEMURIN_VERSION}-jre
 WORKDIR /app
 
 
-RUN groupadd --system app && useradd --system --gid app app
+RUN groupadd --system app && useradd --system --gid app app \
+    && mkdir -p /var/log/app && chown app:app /var/log/app
 COPY --from=build --chown=app:app /workspace/app.jar app.jar
 
 USER app

@@ -1,11 +1,23 @@
 name: hts-emr
 
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 x-app: &app
 
-  environment:
+  environment: &app-env
     SPRING_DATASOURCE_URL: jdbc:oracle:thin:@oracle:1521/FREEPDB1
     SPRING_DATASOURCE_USERNAME: emr
     SPRING_DATASOURCE_PASSWORD: ${APP_USER_PASSWORD:?.env에 APP_USER_PASSWORD가 필요합니다}
+    APP_ENV: ${APP_ENV:-prod}
+
+  volumes:
+    - app-logs:/var/log/app
+
+  logging: *logging
 
   depends_on:
     oracle:
@@ -26,6 +38,7 @@ x-app: &app
 services:
   oracle:
     image: gvenzl/oracle-free:23-slim-faststart
+    logging: *logging
     environment:
       ORACLE_PASSWORD: ${ORACLE_PASSWORD:?.env에 ORACLE_PASSWORD가 필요합니다}
       APP_USER: emr
@@ -45,16 +58,27 @@ services:
   app-blue:
     <<: *app
     image: ghcr.io/itstime1/hts-emr:${BLUE_TAG:-local}
+    environment:
+      <<: *app-env
+      APP_COLOR: blue
+      APP_VERSION: ${BLUE_TAG:-local}
+      LOG_FILE: /var/log/app/app-blue.log
     ports:
       - "8081:8080"
   app-green:
     <<: *app
     image: ghcr.io/itstime1/hts-emr:${GREEN_TAG:-local}
+    environment:
+      <<: *app-env
+      APP_COLOR: green
+      APP_VERSION: ${GREEN_TAG:-local}
+      LOG_FILE: /var/log/app/app-green.log
     ports:
       - "8082:8080"
 
   nginx:
     image: nginx:1.27-alpine
+    logging: *logging
     ports:
       - "8080:80"
     volumes:
@@ -67,3 +91,4 @@ services:
 
 volumes:
   oracle-data:
+  app-logs:
