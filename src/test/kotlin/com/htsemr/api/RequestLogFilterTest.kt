@@ -66,6 +66,7 @@ internal class RequestLogFilterTest {
 
     @BeforeEach
     fun attachAppenders() {
+        MDC.clear()
         requestLogLogger.level = Level.INFO
         requestLogAppender.start()
         requestLogLogger.addAppender(requestLogAppender)

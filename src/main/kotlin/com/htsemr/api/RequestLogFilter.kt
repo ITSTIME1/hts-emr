@@ -1,5 +1,6 @@
 package com.htsemr.api
 
+import com.htsemr.observability.BusinessKeys
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -60,7 +61,7 @@ internal class RequestLogFilter : OncePerRequestFilter() {
 
             MDC.remove(REQUEST_ID_KEY)
             MDC.remove(SESSION_ID_KEY)
-            BusinessKeyInterceptor.KEYS.forEach { MDC.remove(it) }
+            BusinessKeys.KEYS.forEach { MDC.remove(it) }
         }
     }
 

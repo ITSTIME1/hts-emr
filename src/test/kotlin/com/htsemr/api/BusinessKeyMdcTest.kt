@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
+import com.htsemr.observability.BusinessKeys
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -37,6 +38,7 @@ internal class BusinessKeyMdcTest {
 
     @BeforeEach
     fun attachAppenders() {
+        MDC.clear()
         requestLogLogger.level = Level.INFO
         requestLogAppender.start()
         requestLogLogger.addAppender(requestLogAppender)
@@ -58,10 +60,10 @@ internal class BusinessKeyMdcTest {
         requestLogAppender.list.filter { it.formattedMessage == RequestLogFilter.MESSAGE }
 
     private fun ILoggingEvent.businessKeys(): Map<String, String> =
-        mdcPropertyMap.filterKeys { it in BusinessKeyInterceptor.KEYS }
+        mdcPropertyMap.filterKeys { it in BusinessKeys.KEYS }
 
     private fun assertNoBusinessKeysInMdc() {
-        BusinessKeyInterceptor.KEYS.forEach { assertThat(MDC.get(it)).describedAs(it).isNull() }
+        BusinessKeys.KEYS.forEach { assertThat(MDC.get(it)).describedAs(it).isNull() }
     }
 
     @Test

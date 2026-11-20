@@ -5,6 +5,7 @@ import com.jayway.jsonpath.JsonPath
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.slf4j.MDC
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
@@ -34,6 +35,7 @@ internal class ApiFlowIntegrationTest @Autowired constructor(
 
     @AfterEach
     fun cleanUp() {
+        MDC.clear()
         listOf(
             "payment_line", "payment_item", "payment",
             "invoice_line", "invoice",
