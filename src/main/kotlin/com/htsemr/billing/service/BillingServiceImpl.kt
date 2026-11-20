@@ -8,6 +8,7 @@ import com.htsemr.billing.entity.PricedItem
 import com.htsemr.billing.repository.InvoiceLineRepository
 import com.htsemr.billing.repository.InvoiceRepository
 import com.htsemr.master.FeeQueryService
+import com.htsemr.observability.DomainEventLog
 import com.htsemr.reception.EligibilityQueryService
 import com.htsemr.reception.VisitQueryService
 import org.springframework.stereotype.Service
@@ -55,6 +56,16 @@ internal class BillingServiceImpl(
         val invoiceId = requireNotNull(invoice.id) { "저장된 산정에 id가 없습니다" }
 
         invoiceLineRepository.saveAll(items.map { InvoiceLine.of(invoiceId, it) })
+
+        DomainEventLog.emit(
+            "invoice.calculated",
+            "invoiceId" to invoiceId,
+            "visitId" to visit.id,
+            "itemCount" to items.size,
+            "patientAmount" to invoice.patientAmount.amount,
+            "insuranceType" to invoice.insuranceType.name,
+            "copayRate" to invoice.copayRate,
+        )
         return invoiceId
     }
 }
