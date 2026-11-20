@@ -46,6 +46,7 @@ internal class RequestLogIntegrationTest @Autowired constructor(
         assertThat(json.read<Int>("$.status")).isEqualTo(404)
         assertThat(json.read<String>("$.outcome")).isEqualTo("REJECTED")
         assertThat(json.read<String>("$.errorCode")).isEqualTo("VISIT_NOT_FOUND")
+        assertThat(json.read<String>("$.visitId")).isEqualTo("999999")
         assertThat(json.read<Number>("$.durationMs").toLong()).isGreaterThanOrEqualTo(0)
         assertThat(json.read<String>("$.log.level")).isEqualTo("INFO")
     }
