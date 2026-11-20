@@ -9,3 +9,15 @@ spring:
       ddl-auto: validate
   flyway:
     locations: classpath:db/migration
+
+logging:
+  structured:
+    format:
+      # 콘솔(stdout)로 JSON 한 줄씩 낸다. MDC 값(requestId 등)은 최상위 필드로 같이 나간다
+      console: ecs
+    ecs:
+      service:
+        # 어느 배포(blue/green)의 어느 버전이 처리했는지 모든 줄에 남긴다. 컨테이너 환경변수로 주입한다
+        environment: ${APP_ENV:local}
+        node-name: ${APP_COLOR:local}
+        version: ${APP_VERSION:local}
