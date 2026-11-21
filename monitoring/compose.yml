@@ -29,6 +29,36 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  alertmanager:
+    image: prom/alertmanager:v0.35.0
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --cluster.listen-address=
+      - --web.external-url=http://hts-monitor.orb.local:9093
+    ports:
+      # hts-server의 deploy.sh가 무음을 걸 수 있도록 hts-monitor의 OrbStack 내부 주소에만 연다.
+      # 0.0.0.0으로 열면 OrbStack이 Mac의 모든 인터페이스로 포워딩해 같은 Wi-Fi에서도 닿는다
+      - "192.168.139.221:9093:9093"
+    volumes:
+      - ./alertmanager:/etc/alertmanager:ro
+      - alertmanager-data:/alertmanager
+    secrets:
+      - slack_webhook_url
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    mem_limit: 128m
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   grafana:
     image: grafana/grafana:13.2.5
     environment:
@@ -57,6 +87,12 @@ services:
         max-size: "10m"
         max-file: "3"
 
+secrets:
+  # Slack Incoming Webhook URL 한 줄. slack_webhook_url.example을 복사해 만들고, 컨테이너 사용자(nobody)가 읽을 수 있게 chmod 644
+  slack_webhook_url:
+    file: ./alertmanager/secrets/slack_webhook_url
+
 volumes:
   prometheus-data:
+  alertmanager-data:
   grafana-data:

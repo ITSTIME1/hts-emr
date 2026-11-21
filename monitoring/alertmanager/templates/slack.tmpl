@@ -1,0 +1,20 @@
+{{ define "hts.slack.color" -}}
+{{ if eq .Status "resolved" }}good{{ else if eq .CommonLabels.severity "critical" }}danger{{ else }}warning{{ end }}
+{{- end }}
+
+{{ define "hts.slack.title" -}}
+[{{ if eq .Status "firing" }}발생 {{ .Alerts.Firing | len }}건{{ else }}해소{{ end }}] {{ .CommonLabels.alertname }} ({{ .CommonLabels.severity }})
+{{- end }}
+
+{{ define "hts.slack.text" -}}
+{{ range .Alerts -}}
+*{{ if eq .Status "firing" }}발생{{ else }}해소{{ end }}* {{ .Annotations.summary }}
+{{ .Annotations.description }}
+{{- if .Labels.instance }}
+instance: `{{ .Labels.instance }}`
+{{- end }}
+시작: {{ (.StartsAt | tz "Asia/Seoul").Format "2006-01-02 15:04:05" }}
+{{- if eq .Status "resolved" }} / 해소: {{ (.EndsAt | tz "Asia/Seoul").Format "2006-01-02 15:04:05" }}{{ end }}
+
+{{ end -}}
+{{- end }}

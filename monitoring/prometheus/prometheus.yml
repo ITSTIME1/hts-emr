@@ -6,6 +6,12 @@ global:
 rule_files:
   - rules/alerts.yml
 
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
 scrape_configs:
   - job_name: hts-emr
     metrics_path: /actuator/prometheus
