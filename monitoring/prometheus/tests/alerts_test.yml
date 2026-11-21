@@ -1,0 +1,211 @@
+rule_files:
+  - ../rules/alerts.yml
+
+evaluation_interval: 15s
+
+tests:
+  - name: 두 색이 모두 다운이면 서비스 전체 다운이 울린다
+    interval: 15s
+    input_series:
+      - series: 'up{job="hts-emr",instance="hts-server:8081"}'
+        values: '1x8 0x40'
+      - series: 'up{job="hts-emr",instance="hts-server:8082"}'
+        values: '1x8 0x40'
+    alert_rule_test:
+      - eval_time: 2m30s
+        alertname: HtsEmrAllTargetsDown
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: HtsEmrAllTargetsDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "수집되는 앱이 하나도 없습니다"
+              description: "blue와 green 모두 1분 넘게 지표를 가져오지 못합니다. 서비스 서버, 네트워크, 두 앱을 확인하세요."
+
+  - name: 수집 대상이 아예 없어도 서비스 전체 다운이 울린다
+    interval: 15s
+    input_series:
+      - series: 'unrelated{job="other"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: HtsEmrAllTargetsDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: hts-emr
+            exp_annotations:
+              summary: "수집되는 앱이 하나도 없습니다"
+              description: "blue와 green 모두 1분 넘게 지표를 가져오지 못합니다. 서비스 서버, 네트워크, 두 앱을 확인하세요."
+
+  - name: 쉬는 색을 일부러 멈춰도 전체 다운과 서비스 중이던 색 다운은 울리지 않고 한쪽 색 다운만 울린다
+    interval: 15s
+    input_series:
+      - series: 'up{job="hts-emr",instance="hts-server:8081"}'
+        values: '0x60'
+      - series: 'up{job="hts-emr",instance="hts-server:8082"}'
+        values: '1x60'
+      - series: 'http_server_requests_seconds_count{job="hts-emr",instance="hts-server:8082",outcome="SUCCESS",status="200",uri="/x"}'
+        values: '0+5x60'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: HtsEmrAllTargetsDown
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: HtsEmrServingInstanceDown
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: HtsEmrInstanceDown
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: HtsEmrInstanceDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: hts-emr
+              instance: "hts-server:8081"
+            exp_annotations:
+              summary: "hts-server:8081 지표를 가져오지 못합니다"
+              description: "5분 넘게 수집에 실패했습니다. 배포(보통 3분 이내)나 일부러 멈춘 쉬는 색이면 정상입니다."
+
+  - name: 요청을 받던 색이 멈추면 서비스 중이던 색 다운이 울리고 다른 색이 살아 있어도 전체 다운은 울리지 않는다
+    interval: 15s
+    input_series:
+      - series: 'up{job="hts-emr",instance="hts-server:8081"}'
+        values: '1x80'
+      - series: 'up{job="hts-emr",instance="hts-server:8082"}'
+        values: '1x40 0x40'
+      - series: 'http_server_requests_seconds_count{job="hts-emr",instance="hts-server:8082",outcome="SUCCESS",status="200",uri="/x"}'
+        values: '0+5x40'
+    alert_rule_test:
+      - eval_time: 10m30s
+        alertname: HtsEmrServingInstanceDown
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: HtsEmrServingInstanceDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: hts-emr
+              instance: "hts-server:8082"
+            exp_annotations:
+              summary: "hts-server:8082 가 요청을 받다가 멈췄습니다"
+              description: "최근 15분 안에 요청을 처리한 앱이 지표를 내지 않습니다. 서비스 중인 색이 죽었을 수 있습니다."
+      - eval_time: 12m
+        alertname: HtsEmrAllTargetsDown
+        exp_alerts: []
+
+  - name: 서버 오류가 충분한 트래픽에서 1퍼센트를 넘으면 울린다
+    interval: 15s
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="hts-emr",instance="hts-server:8082",outcome="SUCCESS",status="200",uri="/x"}'
+        values: '0+10x80'
+      - series: 'http_server_requests_seconds_count{job="hts-emr",instance="hts-server:8082",outcome="SERVER_ERROR",status="500",uri="/x"}'
+        values: '0+1x80'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: HtsEmrHighServerErrorRate
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: HtsEmrHighServerErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "서버 오류(5xx) 비율이 높습니다"
+              description: "최근 5분 요청 중 9.091% 가 서버 오류입니다. 업무 거부(4xx)는 포함하지 않습니다."
+
+  - name: 업무 거부(4xx)만 많으면 서버 오류율은 울리지 않는다
+    interval: 15s
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="hts-emr",instance="hts-server:8082",outcome="SUCCESS",status="200",uri="/x"}'
+        values: '0+1x80'
+      - series: 'http_server_requests_seconds_count{job="hts-emr",instance="hts-server:8082",outcome="CLIENT_ERROR",status="404",uri="/x"}'
+        values: '0+10x80'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: HtsEmrHighServerErrorRate
+        exp_alerts: []
+
+  - name: 트래픽이 너무 적으면 한 건의 서버 오류로 울리지 않는다
+    interval: 15s
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="hts-emr",instance="hts-server:8082",outcome="SUCCESS",status="200",uri="/x"}'
+        values: '0+0x80'
+      - series: 'http_server_requests_seconds_count{job="hts-emr",instance="hts-server:8082",outcome="SERVER_ERROR",status="500",uri="/x"}'
+        values: '0+1x80'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: HtsEmrHighServerErrorRate
+        exp_alerts: []
+
+  - name: p95가 1초를 넘는 상태가 이어지면 지연 알림이 울린다
+    interval: 15s
+    input_series:
+      - series: 'http_server_requests_seconds_bucket{job="hts-emr",instance="hts-server:8082",le="0.5",uri="/x"}'
+        values: '0+0x80'
+      - series: 'http_server_requests_seconds_bucket{job="hts-emr",instance="hts-server:8082",le="1",uri="/x"}'
+        values: '0+0x80'
+      - series: 'http_server_requests_seconds_bucket{job="hts-emr",instance="hts-server:8082",le="2",uri="/x"}'
+        values: '0+10x80'
+      - series: 'http_server_requests_seconds_bucket{job="hts-emr",instance="hts-server:8082",le="+Inf",uri="/x"}'
+        values: '0+10x80'
+      - series: 'http_server_requests_seconds_count{job="hts-emr",instance="hts-server:8082",uri="/x"}'
+        values: '0+10x80'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: HtsEmrHighLatencyP95
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: HtsEmrHighLatencyP95
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "p95 지연이 1초를 넘습니다"
+              description: "최근 5분 p95가 1.95s 입니다. 풀 대기와 외부 호출 지연을 함께 확인하세요."
+
+  - name: 응답이 빠르거나 요청이 없으면 지연 알림이 울리지 않는다
+    interval: 15s
+    input_series:
+      - series: 'http_server_requests_seconds_bucket{job="hts-emr",instance="hts-server:8082",le="0.05",uri="/x"}'
+        values: '0+10x80'
+      - series: 'http_server_requests_seconds_bucket{job="hts-emr",instance="hts-server:8082",le="+Inf",uri="/x"}'
+        values: '0+10x80'
+      - series: 'http_server_requests_seconds_count{job="hts-emr",instance="hts-server:8082",uri="/x"}'
+        values: '0+10x80'
+      - series: 'http_server_requests_seconds_bucket{job="hts-emr",instance="hts-server:8081",le="2",uri="/x"}'
+        values: '5x80'
+      - series: 'http_server_requests_seconds_bucket{job="hts-emr",instance="hts-server:8081",le="+Inf",uri="/x"}'
+        values: '5x80'
+      - series: 'http_server_requests_seconds_count{job="hts-emr",instance="hts-server:8081",uri="/x"}'
+        values: '5x80'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: HtsEmrHighLatencyP95
+        exp_alerts: []
+
+  - name: 풀 대기가 2분 넘게 이어지면 울리고 짧은 급증에는 울리지 않는다
+    interval: 15s
+    input_series:
+      - series: 'hikaricp_connections_pending{job="hts-emr",instance="hts-server:8082",pool="HikariPool-1"}'
+        values: '0x8 3x60'
+      - series: 'hikaricp_connections_pending{job="hts-emr",instance="hts-server:8081",pool="HikariPool-1"}'
+        values: '0x8 3x4 0x60'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: HtsEmrDbPoolPending
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: HtsEmrDbPoolPending
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: hts-emr
+              instance: "hts-server:8082"
+              pool: HikariPool-1
+            exp_annotations:
+              summary: "hts-server:8082 에서 DB 연결을 기다리는 요청이 있습니다"
+              description: "커넥션을 얻으려고 기다리는 요청이 3건 2분 넘게 이어집니다. DB 지연이나 풀 고갈의 이른 신호입니다."

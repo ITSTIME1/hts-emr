@@ -1,0 +1,64 @@
+groups:
+  - name: hts-emr
+    rules:
+      - alert: HtsEmrAllTargetsDown
+        expr: sum(up{job="hts-emr"}) == 0 or absent(up{job="hts-emr"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "수집되는 앱이 하나도 없습니다"
+          description: "blue와 green 모두 1분 넘게 지표를 가져오지 못합니다. 서비스 서버, 네트워크, 두 앱을 확인하세요."
+
+      - alert: HtsEmrServingInstanceDown
+        expr: >
+          (up{job="hts-emr"} == 0)
+          and on(instance)
+          (sum by (instance) (increase(http_server_requests_seconds_count{job="hts-emr"}[15m])) > 0)
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }} 가 요청을 받다가 멈췄습니다"
+          description: "최근 15분 안에 요청을 처리한 앱이 지표를 내지 않습니다. 서비스 중인 색이 죽었을 수 있습니다."
+
+      - alert: HtsEmrInstanceDown
+        expr: up{job="hts-emr"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} 지표를 가져오지 못합니다"
+          description: "5분 넘게 수집에 실패했습니다. 배포(보통 3분 이내)나 일부러 멈춘 쉬는 색이면 정상입니다."
+
+      - alert: HtsEmrHighServerErrorRate
+        expr: >
+          sum(rate(http_server_requests_seconds_count{job="hts-emr",outcome="SERVER_ERROR"}[5m]))
+          / sum(rate(http_server_requests_seconds_count{job="hts-emr"}[5m])) > 0.01
+          and sum(rate(http_server_requests_seconds_count{job="hts-emr"}[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "서버 오류(5xx) 비율이 높습니다"
+          description: "최근 5분 요청 중 {{ $value | humanizePercentage }} 가 서버 오류입니다. 업무 거부(4xx)는 포함하지 않습니다."
+
+      - alert: HtsEmrHighLatencyP95
+        expr: >
+          histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job="hts-emr"}[5m]))) > 1
+          and sum(rate(http_server_requests_seconds_count{job="hts-emr"}[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 지연이 1초를 넘습니다"
+          description: "최근 5분 p95가 {{ $value | humanizeDuration }} 입니다. 풀 대기와 외부 호출 지연을 함께 확인하세요."
+
+      - alert: HtsEmrDbPoolPending
+        expr: hikaricp_connections_pending{job="hts-emr"} > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} 에서 DB 연결을 기다리는 요청이 있습니다"
+          description: "커넥션을 얻으려고 기다리는 요청이 {{ $value }}건 2분 넘게 이어집니다. DB 지연이나 풀 고갈의 이른 신호입니다."
