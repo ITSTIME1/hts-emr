@@ -12,7 +12,7 @@ IMAGE=${IMAGE:-ghcr.io/itstime1/hts-emr}   # compose.yml의 image 주소와 같�
 
 log()  { printf '\033[1;34m[deploy]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[deploy] 중단:\033[0m %s\n' "$*" >&2; exit 1; }
-    
+
 
 
 active_color() {
@@ -27,7 +27,7 @@ tag_of() {
   grep "^$key=" .env 2>/dev/null | cut -d= -f2 || true
 }
 
-set_tag() {  
+set_tag() {
   local key; key="$(echo "$1" | tr a-z A-Z)_TAG"
   touch .env
   { grep -v "^$key=" .env || true; echo "$key=$2"; } > .env.tmp && mv .env.tmp .env
@@ -60,14 +60,12 @@ wait_healthy() {
   log "app-$color 가 healthy가 될 때까지 기다림 (최대 ${HEALTH_TIMEOUT}초)"
   while :; do
     s=$(health_of "$color")
-    # 부팅 중 죽으면 restart 정책 때문에 계속 재시작하며 starting으로 보인다. 재시작 횟수로 빨리 알아챈다
     [ "$(restarts_of "$color")" -gt 0 ] && s=crashed
     case "$s" in
       healthy)
         log "app-$color healthy (${waited}초)"; return 0 ;;
       unhealthy|exited|dead|crashed|없음)
         docker compose logs --tail 40 "app-$color" >&2 || true
-        # 그냥 두면 restart 정책 때문에 실패한 부팅을 계속 되풀이한다. 멈춰 둔다
         docker compose stop "app-$color" >/dev/null 2>&1 || true
         fail "app-$color 상태가 $s 입니다. 트래픽은 그대로 app-$(active_color) 에 있습니다" ;;
     esac
@@ -122,7 +120,6 @@ point_nginx_to() {
     fail "nginx에 새 설정을 적용하지 못했습니다. active.conf를 app-$prev 로 되돌렸습니다"
   fi
 
-  # reload는 비동기라 잠깐 옛 worker가 응답할 수 있다. 몇 번 다시 확인한다
   local i got=""
   for i in 1 2 3 4 5 6 7 8 9 10; do
     got=$(active_header)
@@ -135,8 +132,6 @@ point_nginx_to() {
 
 
 
-
-# ---------- 명령 ----------
 cmd_status() {
   local a c; a=$(active_color)
   for c in blue green; do
@@ -148,27 +143,24 @@ cmd_status() {
 
 cmd_deploy() {
   local tag=$1
-  # 로컬에서 다시 빌드하지 않고, CI가 GHCR에 올려 둔 이미지를 그대로 받는다. 받지 못하면 아무것도 바꾸기 전에 중단
   docker pull "$IMAGE:$tag" >/dev/null 2>&1 \
     || fail "이미지 $IMAGE:$tag 를 받지 못했습니다 (태그가 맞는지, GHCR 로그인이 되어 있는지 확인하세요)"
+
   lock
 
   local from to; from=$(active_color); to=$(other_color "$from")
   log "지금 app-$from (hts-emr:$(tag_of "$from")) 이 서비스 중. 대기 쪽 app-$to 에 hts-emr:$tag 를 올립니다"
 
-  # 1) 대기 쪽만 새 이미지로 다시 만든다. --no-deps: oracle/nginx는 건드리지 않는다
   set_tag "$to" "$tag"
   docker compose up -d --no-deps --force-recreate "app-$to"
 
-  # 2) 관문: healthy + 재시작 없음
   wait_healthy "$to"
 
-  # 3) 관문: nginx를 거치지 않고 새 쪽에 직접 물어본다
   log "nginx를 거치지 않고 app-$to 를 직접 확인 (127.0.0.1:$(port_of "$to"))"
   curl -fs "http://127.0.0.1:$(port_of "$to")/actuator/health/readiness" >/dev/null \
     || fail "app-$to 직접 확인 실패. 트래픽은 그대로 app-$from 에 있습니다"
 
-  # 4) 전환
+
   point_nginx_to "$to"
   log "완료: hts-emr:$tag 가 app-$to 에서 서비스 중"
   log "app-$from (hts-emr:$(tag_of "$from")) 은 롤백용으로 켜 둡니다. 되돌리려면: deploy.sh rollback"
