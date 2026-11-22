@@ -25,3 +25,7 @@ bin/
 .env
 *.log
 docs/
+
+### Secrets ###
+monitoring/alertmanager/secrets/*
+!monitoring/alertmanager/secrets/*.example
