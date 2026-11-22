@@ -24,3 +24,4 @@ bin/
 ### Local environment ###
 .env
 *.log
+docs/
